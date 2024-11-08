@@ -62,7 +62,8 @@ cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, device_id,
 
 ```{r}
 cubic_use_trx1 <- cubic_use_trx %>%
-  filter(str_detect(device_id, 'BMV'))
+  filter(str_detect(device_id, 'BMV')) %>%
+  filter(transaction_dtm >= ymd(20241001))
 ```
 
 ```{r}
