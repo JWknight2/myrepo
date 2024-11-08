@@ -78,3 +78,11 @@ cubic_use_question2 <- cubic_use_trx %>%
   filter(transaction_dtm >= 20241101)
 ```
 
+```{r}
+user_path <- path_home()
+
+path_desktop <- paste0(user_path, "/OneDrive - MBTA/Desktop/Oct-LatLon-NAs.csv")
+
+write_csv(cubic_use_question1, path_desktop)
+```
+
