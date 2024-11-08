@@ -1,0 +1,79 @@
+---
+title: "AFC_work"
+author: "Jett Knight, BI Analyst, OPMI"
+output: html_document
+date: "2024-11-08"
+---
+
+#Setup
+
+```{r setup, include=FALSE}
+library(fs)
+library(tidyverse)
+library(lubridate)
+library(DBI)
+library(RPostgres)
+library(sf)
+library(ggspatial)
+library(prettymapr)
+library(units)
+library(opmitools)
+
+options(scipen = 999)
+```
+
+#DB Connection
+
+```{r}
+user_box <- "jknight2"
+user <- "jknight"
+user_pgadmin <- "jknight2"
+
+box_link <- paste0("C:/Users/",user_box,"/Box/02 Active Projects/2024 AFC 2.0/Public Rollout Analyses/Tableau/")
+
+con_dmap <-
+  dbConnect(
+    Postgres(),
+    dbname = "dmap_import",
+    user = user_pgadmin,
+    password = rstudioapi::askForPassword(),
+    port = 5432,
+    host = "dmap-import-prod.cluster-ro-cw84s0ixvuei.us-east-1.rds.amazonaws.com",
+    sslmode = "require"
+  )
+
+con_rs <-
+  dbConnect(
+    Postgres(),
+    dbname = "mbta_dw",
+    user = user,
+    password = rstudioapi::askForPassword(),
+    port = 5432,
+    host = "opmi-research-server.cluster-csb3ld1kts7u.us-east-1.rds.amazonaws.com",
+    sslmode = "require"
+  )
+```
+
+#Analysis
+
+```{r}
+cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, device_id, latitude, longitude FROM public.use_transaction_location"))
+```
+
+```{r}
+cubic_use_trx1 <- cubic_use_trx %>%
+  filter(str_detect(device_id, 'BMV'))
+```
+
+```{r}
+cubic_use_question1 <- cubic_use_trx1 %>%
+  filter(is.na(latitude)) %>%
+  filter(is.na(longitude))
+```
+
+```{r}
+cubic_use_question2 <- cubic_use_trx %>%
+  filter(device_id == "BMV36010") %>%
+  filter(transaction_dtm >= 20241101)
+```
+
