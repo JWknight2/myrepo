@@ -57,7 +57,7 @@ con_rs <-
 #Analysis
 
 ```{r}
-cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, device_id, latitude, longitude FROM public.use_transaction_location"))
+cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT * FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2024-10-01' AND '2024-11-30'"))
 ```
 
 ```{r}
