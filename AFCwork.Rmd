@@ -57,31 +57,44 @@ con_rs <-
 #Analysis
 
 ```{r}
-cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT * FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2024-10-01' AND '2024-11-30'"))
+cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT stop_point_name, route_number FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2024-10-01' AND '2024-11-30'"))
 ```
 
 ```{r}
 cubic_use_trx1 <- cubic_use_trx %>%
-  filter(str_detect(device_id, 'BMV'))
+  filter(is.na(route_number))
 ```
 
 ```{r}
-cubic_use_question1 <- cubic_use_trx1 %>%
-  filter(is.na(latitude)) %>%
-  filter(is.na(longitude))
+table(cubic_use_trx1$stop_point_name)
 ```
 
 ```{r}
-cubic_use_question2 <- cubic_use_trx %>%
-  filter(device_id == "BMV36010") %>%
-  filter(transaction_dtm >= 20241101)
+cubic_use_trx2 <- cubic_use_trx %>%
+  filter(is.na(stop_point_name))
 ```
 
 ```{r}
-user_path <- path_home()
+table(cubic_use_trx2$route_number)
+```
 
-path_desktop <- paste0(user_path, "/OneDrive - MBTA/Desktop/Oct-LatLon-NAs.csv")
+```{r}
+#cubic_use_question1 <- cubic_use_trx1 %>%
+#  filter(is.na(latitude)) %>%
+#  filter(is.na(longitude))
+```
 
-write_csv(cubic_use_question1, path_desktop)
+```{r}
+#cubic_use_question2 <- cubic_use_trx %>%
+#  filter(device_id == "BMV36010") %>%
+#  filter(transaction_dtm >= 20241101)
+```
+
+```{r}
+#user_path <- path_home()
+
+#path_desktop <- paste0(user_path, "/OneDrive - MBTA/Desktop/Oct-LatLon-NAs.csv")
+
+#write_csv(cubic_use_question1, path_desktop)
 ```
 
