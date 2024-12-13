@@ -57,7 +57,7 @@ con_rs <-
 #Analysis
 
 ```{r}
-cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT stop_point_name, route_number FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2024-11-01' AND '2024-12-31'"))
+cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT stop_point_name, route_number FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2024-12-01' AND '2024-12-31'"))
 ```
 
 ```{r}
