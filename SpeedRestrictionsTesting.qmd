@@ -1,5 +1,201 @@
 ---
-title: "SpeedRestrictionsTesting"
+title: "Speed Restrictions By Day"
 format: html
 ---
 
+#Setup
+
+##Variables to update
+
+```{r}
+#User path
+library(fs)
+library(zoo)
+user_path = path_home()
+
+#TODO: Vars to update
+month <- "2024-12"
+```
+
+##Admin
+
+```{r}
+#Admin
+library(conflicted)
+library(tidyverse)
+library(openxlsx)
+conflicts_prefer(dplyr::filter)
+
+path_raw <- paste0(user_path, "/Desktop/")
+
+#path_raw <- paste0(user_path, "/Box/01 Admin/00 Data Strategy/Ongoing Activities/Open Data Portal/Data/Raw Datasets/System Data/Speed Restrictions/") # raw data
+path_pub <- paste0(user_path, "/Box/01 Admin/00 Data Strategy/Ongoing Activities/Open Data Portal/Data/Published Datasets/System Data/Speed Restrictions/") # publication
+path_mr <- paste0(user_path, "/Box/01 Admin/00 Data Strategy/Ongoing Activities/Open Data Portal/Data QA/Manager Review/") # manager review
+
+filename_raw <- paste0(path_raw, month, " SR Daily Data.xlsx")
+```
+
+##Move file to Raw Datasets from downloaded email copy
+
+```{r}
+filename_dl <- paste0(user_path, "/Box/02 Active Projects/DS Dashboards/Public Dashboards/Performance/Speed Restrictions/Published Data/Published Data Files/", "SR Month End Data v2 ", month, ".xlsx")
+
+if (file.exists(filename_dl)) {
+  if (file.exists(filename_raw)) {
+    warning("Raw data file already exists! Overwriting with new file.")
+  }
+  file_copy(filename_dl, filename_raw)
+} else {
+  warning("Downloaded file does not exist! Download copy or edit name.")
+}
+
+```
+
+##Read in and reformat data
+
+```{r}
+#Read in and reformat data
+sr <-
+  read.xlsx(
+    paste0(path_raw, month, " SR Daily Data.xlsx"),
+    sheet = "SR_Export",
+    detectDates = TRUE
+  ) %>%
+  rename(Calendar_Date = Calendar.Date,
+         SR_Restriction_Distance_Span = SR_Restriction.Distance.Span) %>%
+  filter(!is.na(ID))
+```
+
+#QA
+
+##Check for disagreement between distance values
+
+```{r}
+sr %>% 
+  filter(Restriction_Distance_Feet/5280 - Restriction_Distance_Miles > 0.000001)
+```
+
+
+```{r}
+#| eval: false
+
+# #Round values
+# #Deprecated
+
+# sr <-
+#   sr %>% 
+#   mutate(Restriction_Distance_Feet = round(Restriction_Distance_Feet),
+#          Restriction_Distance_Miles = round(Restriction_Distance_Miles, digits = 3),
+#          Line_Restricted_Track_Pct = round(Line_Restricted_Track_Pct, digits = 3))
+```
+
+##Create daily summary table for plotting
+
+```{r}
+start_date <- min(sr$Calendar_Date)
+end_date <- max(sr$Calendar_Date)
+
+daily_summary <-
+  tibble(
+    Calendar_Date = Date(),
+    Count_SR = integer(),
+    Feet_SR = numeric(),
+    Miles_SR = numeric(),
+    Systemwide_Restricted_Track_Pct = numeric()
+  )
+days <- seq(start_date, end_date, by = "days")
+# days <- seq(ymd(start_date), ymd(end_date), by = "days")
+for (date in days) {
+  restrictions_day <- 
+    sr %>% 
+    mutate(Calendar_Date = ymd(Calendar_Date)) %>% 
+    filter(Calendar_Date == date)
+  daily_summary <-
+    daily_summary %>%
+    add_row(
+      Calendar_Date = as.Date(date),
+      Count_SR = length(unique(restrictions_day$ID)),
+      Feet_SR = sum(restrictions_day$Restriction_Distance_Feet),
+      Miles_SR = sum(restrictions_day$Restriction_Distance_Miles),
+      Systemwide_Restricted_Track_Pct = sum(restrictions_day$Systemwide_Restricted_Track_Pct)
+    )
+}
+```
+
+##Plot count, feet, miles, and systemwide percentage of restrictions for each day
+
+```{r}
+daily_summary %>%
+  ggplot(aes(x = Calendar_Date, y = Count_SR)) +
+  geom_line() +
+  ggtitle("Count of Speed Restrictions") + 
+  xlab("Date") + ylab("SR Count") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_y_continuous(limits = c(0, max(daily_summary$Count_SR)))
+daily_summary %>%
+  ggplot(aes(x = Calendar_Date, y = Feet_SR)) +
+  geom_line() +
+  ggtitle("Total Feet of Speed Restrictions") + 
+  xlab("Date") + ylab("Feet_SR") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_y_continuous(limits = c(0, max(daily_summary$Feet_SR)))
+daily_summary %>%
+  ggplot(aes(x = Calendar_Date, y = Miles_SR)) +
+  geom_line() +
+  ggtitle("Total Miles of Speed Restrictions") + 
+  xlab("Date") + ylab("Miles_SR") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_y_continuous(limits = c(0, max(daily_summary$Miles_SR)))
+daily_summary %>%
+  ggplot(aes(x = Calendar_Date, y = Systemwide_Restricted_Track_Pct * 100)) +
+  geom_line() +
+  ggtitle("Systemwide Restricted Track Percentage") +
+  xlab("Date") + ylab("Percentage Restricted") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_y_continuous(limits = c(0, 100), expand = c(0, 0))
+```
+
+#Upload
+
+##Write to Manager Review
+
+```{r}
+#Write to manager review
+names <-
+  c(
+    "Calendar_Date",
+    "ID",
+    "Track_Direction",
+    "Line",
+    "Branch",
+    "Track_Name",
+    "Location_Description",
+    "Loc_GTFS_Stop_ID",
+    "Location_Type",
+    "Direction_Sort",
+    "Restriction_Status",
+    "Date_Restriction_Reported",
+    "Date_Restriction_Cleared",
+    "Restriction_Speed_MPH",
+    "Restriction_Reason",
+    "Restriction_Distance_Feet",
+    "Restriction_Distance_Miles",
+    "Line_Restricted_Track_Pct",
+    "Line_Total_Track_Miles",
+    "Systemwide_Restricted_Track_Pct",
+    "Systemwide_Total_Track_Miles",
+    "SR_Restriction_Distance_Span",
+    "Restriction_Path",
+    "Restriction_Days_Active_On_Calendar_Day",
+    "Restriction_Days_to_Clear",
+    "Daily_Restriction_Count_Start",
+    "Month_Restriction_Count_Start",
+    "Restriction_Count_New",
+    "Restriction_Count_Cleared",
+    "Month_Restriction_Count_End",
+    "Daily_Restriction_Count_End"
+  )
+sr %>% 
+  select(all_of(names)) %>% 
+  write_csv(paste0(path_mr, month, "_Speed_Restrictions_By_Day.csv"), na = "")
+```
