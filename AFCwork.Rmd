@@ -57,16 +57,16 @@ con_rs <-
 #Analysis
 
 ```{r}
-cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT stop_point_name, route_number FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2024-12-01' AND '2024-12-31'"))
+cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT external_stop_point_id FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2025-01-01' AND '2025-01-31'"))
 ```
 
 ```{r}
-cubic_use_trx1 <- cubic_use_trx %>%
-  filter(stop_point_name == "Airport :70047")
+#cubic_use_trx1 <- cubic_use_trx %>%
+#  filter(stop_point_name == "Airport :70047")
 ```
 
 ```{r}
-table(cubic_use_trx1$route_number)
+#table(cubic_use_trx1$route_number)
 ```
 
 ```{r}
@@ -79,7 +79,7 @@ table(cubic_use_trx1$route_number)
 ```
 
 ```{r}
-table(cubic_use_trx2$route_number)
+#table(cubic_use_trx2$route_number)
 ```
 
 ```{r}
