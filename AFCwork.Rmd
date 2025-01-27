@@ -57,7 +57,16 @@ con_rs <-
 #Analysis
 
 ```{r}
-cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT external_stop_point_id FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2025-01-01' AND '2025-01-31'"))
+cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT external_stop_point_id, transaction_dtm FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2025-01-20' AND '2025-01-31'"))
+```
+
+```{r}
+cubic_use_trx1 <- cubic_use_trx %>%
+  filter(!is.na(external_stop_point_id))
+```
+
+```{r}
+table(cubic_use_trx$external_stop_point_id)
 ```
 
 ```{r}
