@@ -57,57 +57,31 @@ con_rs <-
 #Analysis
 
 ```{r}
-cubic_use_trx <- dbGetQuery(con_dmap, paste0("SELECT external_stop_point_id, transaction_dtm FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date BETWEEN '2025-01-20' AND '2025-01-31'"))
+recent_discrepant_taps <- dbGetQuery(con_rs, paste0("SELECT * FROM ridership.afc2_device_location_issues WHERE svc_date >= '2025-02-01'"))
 ```
 
 ```{r}
-cubic_use_trx1 <- cubic_use_trx %>%
-  filter(!is.na(external_stop_point_id))
+subway_discrepant_taps <- recent_discrepant_taps %>%
+  filter(operator_name == 'Subway')
 ```
 
 ```{r}
-table(cubic_use_trx$external_stop_point_id)
+correct_subway_taps <- subway_discrepant_taps %>%
+  filter(over_150m == 'Lat/Lon within 150m of Displayed Stop Point')
+
+incorrect_subway_taps <- subway_discrepant_taps %>%
+  filter(over_150m == 'Lat/Lon Farther than 150m from Displayed Stop Point')
+
+na_taps <- subway_discrepant_taps %>%
+  filter(over_150m == 'BMV Trx Missing Lat/Lon')
 ```
 
 ```{r}
-#cubic_use_trx1 <- cubic_use_trx %>%
-#  filter(stop_point_name == "Airport :70047")
+table(subway_discrepant_taps$over_150m)
 ```
 
 ```{r}
-#table(cubic_use_trx1$route_number)
-```
-
-```{r}
-#table(cubic_use_trx1$stop_point_name)
-```
-
-```{r}
-#cubic_use_trx2 <- cubic_use_trx %>%
-#  filter(is.na(stop_point_name))
-```
-
-```{r}
-#table(cubic_use_trx2$route_number)
-```
-
-```{r}
-#cubic_use_question1 <- cubic_use_trx1 %>%
-#  filter(is.na(latitude)) %>%
-#  filter(is.na(longitude))
-```
-
-```{r}
-#cubic_use_question2 <- cubic_use_trx %>%
-#  filter(device_id == "BMV36010") %>%
-#  filter(transaction_dtm >= 20241101)
-```
-
-```{r}
-#user_path <- path_home()
-
-#path_desktop <- paste0(user_path, "/OneDrive - MBTA/Desktop/Oct-LatLon-NAs.csv")
-
-#write_csv(cubic_use_question1, path_desktop)
+sort(table(na_taps$stop_name_from_stoppoint))
+table(na_taps$stop_name_from_coordinates)
 ```
 
