@@ -85,3 +85,21 @@ sort(table(na_taps$stop_name_from_stoppoint))
 table(na_taps$stop_name_from_coordinates)
 ```
 
+#Analysis 2
+
+```{r}
+stop_id_population <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, external_stop_point_id FROM public.use_transaction_location WHERE transaction_dtm >= '2025-02-17'"))
+```
+
+```{r}
+stop_point_nas <- stop_id_population %>%
+  mutate(stop_point_id_date = as.Date(transaction_dtm))
+
+stop_point_nas <- stop_point_nas %>%
+  filter(is.na(external_stop_point_id))
+```
+
+```{r}
+table(stop_point_nas$stop_point_id_date)
+```
+
