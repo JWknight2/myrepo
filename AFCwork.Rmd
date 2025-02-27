@@ -25,11 +25,11 @@ options(scipen = 999)
 #DB Connection
 
 ```{r}
-user_box <- "jknight2"
+user_sp <- "jknight2"
 user <- "jknight"
 user_pgadmin <- "jknight2"
 
-box_link <- paste0("C:/Users/",user_box,"/Box/02 Active Projects/2024 AFC 2.0/Public Rollout Analyses/Tableau/")
+sp_link <- paste0("C:/Users/",user_sp,"/OneDrive - MBTA/Documents - OPMI/02 Active Projects/2024 AFC 2.0/Public Rollout Analyses/Tableau/")
 
 con_dmap <-
   dbConnect(
