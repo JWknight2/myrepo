@@ -150,6 +150,6 @@ table(subway_only$over_150m)
 ```{r}
 user_path <- path_home()
 
-write.csv(subway_only, file = paste0(user_path, ""))
+write.csv(subway_only, file = paste0(user_path, "/OneDrive - MBTA/Desktop/subway_discrepancies_0121.csv"), row.names = F)
 ```
 
