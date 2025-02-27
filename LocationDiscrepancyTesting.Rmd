@@ -63,12 +63,8 @@ stop_point_rt <- dbGetQuery(con_dmap, paste0(
 ```
 
 ```{r}
-latest_date <- dbGetQuery(con_rs, paste0(
-  "SELECT max(svc_date) FROM ridership.afc2_device_location_issues"
-))
-
-start_date <- ymd(latest_date[1,1])
-end_date <- ymd(Sys.Date() - day(1))
+start_date <- ymd(20250219)
+end_date <- ymd(20250225)
 
 load_dates <- seq.Date(start_date, end_date, "day")
 
