@@ -188,7 +188,7 @@ full_actual_stop <- location_trx_dist %>%
 
 rs_device_location <- full_actual_stop %>% 
   transmute(svc_date, device_id, transaction_dtm, operator_name, 
-            external_route_id, bus_id, ride_count, external_stop_point_iddist_btn = dist_btn %>% as.numeric(), 
+            external_route_id, bus_id, ride_count, external_stop_point_id, dist_btn = dist_btn %>% as.numeric(), 
             over_150m = over_100m, stop_name_from_stoppoint, stop_name_from_coordinates) %>%
   rbind(null_location)
 
