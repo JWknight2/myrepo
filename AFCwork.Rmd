@@ -54,7 +54,7 @@ con_rs <-
   )
 ```
 
-#Analysis
+#Analysis 1
 
 ```{r}
 recent_discrepant_taps <- dbGetQuery(con_rs, paste0("SELECT * FROM ridership.afc2_device_location_issues WHERE svc_date >= '2025-02-01'"))
@@ -119,5 +119,11 @@ recent_nas <- stop_point_recent %>%
 
 recent_complete <- stop_point_recent %>%
   filter(!is.na(external_stop_point_id))
+```
+
+#Analysis 3
+
+```{r}
+jan_latlon_missing <- dbGetQuery(con_rs, paste0("SELECT * FROM ridership.afc2_device_location_issues WHERE svc_date = '2025-01-21'"))
 ```
 
