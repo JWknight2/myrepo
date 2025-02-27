@@ -198,15 +198,7 @@ distinct_dates <- rs_device_location %>%
 
 dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "'")
 
-
-# add data to afc_transactions on the research server
-dbExecute(con_rs, paste0(
-  "DELETE FROM ridership.afc2_device_location_issues WHERE svc_date IN (", dates_to_drop, ");"
-))
-
-dbAppendTable(con_rs, Id(schema = "ridership", table = "afc2_device_location_issues"), rs_device_location)
-
 }
 
-
+write.csv(rs_device_location, file = paste0(user_path, "/Desktop/location_discrepancies_test.csv"), row.names = F)
 ```
