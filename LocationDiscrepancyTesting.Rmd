@@ -137,7 +137,7 @@ stop_point_coords <- location %>%
   st_as_sf(coords = c("stop_lon","stop_lat"), crs = 4326)
 
 location_trx <- location %>%
-  select(id, svc_date, operator_name, stop_id, stop_name, latitude, longitude, external_stop_point_id) %>%
+  select(id, svc_date, operator_name, stop_id, stop_name, latitude, longitude) %>%
   st_as_sf(coords = c("longitude","latitude"), crs = 4326)
 
 distances <- st_distance(stop_point_coords, location_trx, by_element = T) %>%
