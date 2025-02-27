@@ -127,3 +127,29 @@ recent_complete <- stop_point_recent %>%
 jan_latlon_missing <- dbGetQuery(con_rs, paste0("SELECT * FROM ridership.afc2_device_location_issues WHERE svc_date = '2025-01-21'"))
 ```
 
+```{r}
+subway_only <- jan_latlon_missing %>%
+  filter(operator_name == 'Subway')
+```
+
+```{r}
+correct_jan_taps <- subway_only %>%
+  filter(over_150m == 'Lat/Lon within 150m of Displayed Stop Point')
+
+incorrect_jan_taps <- subway_only %>%
+  filter(over_150m == 'Lat/Lon Farther than 150m from Displayed Stop Point')
+
+na_jan_taps <- subway_only %>%
+  filter(over_150m == 'BMV Trx Missing Lat/Lon' | over_150m == 'BMV Trx Missing Stop Point Name')
+```
+
+```{r}
+table(subway_only$over_150m)
+```
+
+```{r}
+user_path <- path_home()
+
+write.csv(subway_only, file = paste0(user_path, ""))
+```
+
