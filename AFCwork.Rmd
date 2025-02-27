@@ -148,8 +148,18 @@ table(subway_only$over_150m)
 ```
 
 ```{r}
+table(subway_only$ride_count)
+```
+
+```{r}
 user_path <- path_home()
 
 write.csv(subway_only, file = paste0(user_path, "/OneDrive - MBTA/Desktop/subway_discrepancies_0121.csv"), row.names = F)
+```
+
+#Analysis 4
+
+```{r}
+jan_discrepancies_total <- dbGetQuery(con_rs, paste0("SELECT * ridership.afc2_device_location_issues WHERE svc_date BETWEEN '2025-01-01' AND '2025-01-31'"))
 ```
 
