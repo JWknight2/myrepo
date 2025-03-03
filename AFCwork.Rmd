@@ -160,6 +160,16 @@ write.csv(subway_only, file = paste0(user_path, "/OneDrive - MBTA/Desktop/subway
 #Analysis 4
 
 ```{r}
-jan_discrepancies_total <- dbGetQuery(con_rs, paste0("SELECT * ridership.afc2_device_location_issues WHERE svc_date BETWEEN '2025-01-01' AND '2025-01-31'"))
+jan_discrepancies_total <- dbGetQuery(con_rs, paste0("SELECT * FROM ridership.afc2_device_location_issues WHERE svc_date BETWEEN '2025-01-01' AND '2025-01-31'"))
+```
+
+```{r}
+table(jan_discrepancies_total$svc_date)
+```
+
+```{r}
+user_path <- path_home()
+
+write.csv(jan_discrepancies_total, file = paste0(user_path, "/OneDrive - MBTA/Desktop/jan_discrepancies_total.csv"), row.names = F)
 ```
 
