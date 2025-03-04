@@ -2,7 +2,7 @@
 title: "location_discrepancies"
 author: "Megan Willis-Jackson, Mgr Ridership Reporting, OPMI"
 output: html_document
-date: "2024-08-15"
+date: "2025-03-04"
 ---
 
 ```{r setup, include=FALSE}
@@ -63,8 +63,8 @@ stop_point_rt <- dbGetQuery(con_dmap, paste0(
 ```
 
 ```{r}
-start_date <- ymd(20250219)
-end_date <- ymd(20250225)
+start_date <- ymd(20250201)
+end_date <- ymd(20250228)
 
 load_dates <- seq.Date(start_date, end_date, "day")
 
@@ -202,5 +202,5 @@ dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "
 
 user_path <- path_home()
 
-write.csv(rs_device_location, file = paste0(user_path, "/OneDrive - MBTA/Desktop/location_discrepancies_test.csv"), row.names = F)
+write.csv(rs_device_location, file = paste0(user_path, "/OneDrive - MBTA/Desktop/location_discrepancies_feb_new.csv"), row.names = F)
 ```

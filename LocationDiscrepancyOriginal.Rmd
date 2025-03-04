@@ -2,63 +2,8 @@
 title: "location_discrepancies"
 author: "Megan Willis-Jackson, Mgr Ridership Reporting, OPMI"
 output: html_document
-date: "2025-02-28"
+date: "2025-03-04"
 ---
-
----
-### AFC2 Location Discrepancy Analysis
----
-
-### Summary of Purpose: 
-- This script is used to analyze the scale of discrepancies between the 
-  displayed stop point of an AFC2 transaction on a Bus Mobile Validator (BMV, 
-  on buses and light rail vehicles) and the displayed lat/lon coordinates of 
-  that same transaction. Incorrectly reported locations and missingness rates 
-  for lat/lon and stop point fields are examined over time.
-
-### Reviewer:
-- *Name of the Reviewer*
-
-### Review Date:
-- *Date of Review*
-
----
-
-### OPMI Partner Department (if applicable):
-- Fare Revenue / AFC2.0 Team
-
-### Data Sources:
-- This script will pull the most recent transactions available in the 
-  DMAP public.use_transaction_location table on TID's DMAP data lake.
-
-- *Data Source 1*: AFC2 transactions [public.use_transaction_location on DMAP]
-- *Data Source 2*: ODS stop point table [ods.edw_stop_point_dimension on DMAP]
-- *Data Source 3*: Location discrepancy table [ridership.afc2_device_location
-                   _issues on Research Server]
-- *Data Source 4*: GTFS location data [gtfs_post_recap.stops_2024_2_recap on 
-                   Research Server]
-
-### Data Outputs:
-- *Data Output 1*: Location discrepancy table [ridership.afc2_device_location
-                   _issues on Research Server]
-- *Data Output 2*: Location discrepancy dashboards [New_AFC2_Dashboards on 
-                   Tableau Server]
-
-### Audience: 
-- Fare Revenue Team and Performance Management Team
-
-### Updates:
-- R script that pulls recent data no longer needs to be run manually. Process 
-  now automated and handled by VisualCron. Prep flow that succeeds this script 
-  (see below) also now automated and put on daily schedule.
-
-### Caveats:
-- Data consistently runs on a 2-day lag.
-
-### Scripts before & after:
-- To update the online dashboards, this prep flow on the Tableau Server must be 
-  run (now automated): https://awdata.mbta.com/#/flows/751/overview
-
 
 ```{r setup, include=FALSE}
 library(fs)
@@ -76,7 +21,6 @@ library(here)
 
 options(scipen = 999)
 ```
-
 
 # PGAdmin DB connection
 use this chunk if you don't have .Renviron set up with your credentials
@@ -118,44 +62,9 @@ stop_point_rt <- dbGetQuery(con_dmap, paste0(
 
 ```
 
-use this chunk if you do have .Renviron set up
 ```{r}
-
-user_box <- Sys.getenv("user_box")
-box_link <- paste0("C:/Users/",user_box,"/Box/02 Active Projects/2024 AFC 2.0/Public Rollout Analyses/Tableau/")
-
-con_dmap <- dbConnect(
-  RPostgres::Postgres(),
-  dbname = Sys.getenv("DMAP_DB_NAME"),
-  host = Sys.getenv("DMAP_DB_HOST"),
-  port = Sys.getenv("DMAP_DB_PORT"),
-  user = Sys.getenv("DMAP_DB_USER"),
-  password = Sys.getenv("DMAP_DB_PASSWORD")
-)
-
-con_rs <- dbConnect(
-  RPostgres::Postgres(),
-  dbname = Sys.getenv("RS_DB_NAME"),
-  host = Sys.getenv("RS_DB_HOST"),
-  port = Sys.getenv("RS_DB_PORT"),
-  user = Sys.getenv("RS_DB_USER"),
-  password = Sys.getenv("RS_DB_PASSWORD")
-)
-
-stop_point_rt <- dbGetQuery(con_dmap, paste0(
-  "SELECT stop_point_id, stop_point_name, external_stop_point_id
-  FROM ods.edw_stop_point_dimension"
-))
-```
-
-
-```{r}
-latest_date <- dbGetQuery(con_rs, paste0(
-  "SELECT max(svc_date) FROM ridership.afc2_device_location_issues"
-))
-
-start_date <- ymd(latest_date[1,1])
-end_date <- ymd(Sys.Date() - day(1))
+start_date <- ymd(20250201)
+end_date <- ymd(20250228)
 
 load_dates <- seq.Date(start_date, end_date, "day")
 
@@ -289,15 +198,9 @@ distinct_dates <- rs_device_location %>%
 
 dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "'")
 
-
-# add data to afc_transactions on the research server
-dbExecute(con_rs, paste0(
-  "DELETE FROM ridership.afc2_device_location_issues WHERE svc_date IN (", dates_to_drop, ");"
-))
-
-dbAppendTable(con_rs, Id(schema = "ridership", table = "afc2_device_location_issues"), rs_device_location)
-
 }
 
+user_path <- path_home()
 
+write.csv(rs_device_location, file = paste0(user_path, "/OneDrive - MBTA/Desktop/location_discrepancies_feb_old.csv"), row.names = F)
 ```
