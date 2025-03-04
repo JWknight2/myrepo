@@ -69,17 +69,23 @@ end_date <- ymd(20250228)
 load_dates <- seq.Date(start_date, end_date, "day")
 
 for (sdate in 1:length(load_dates)){
-
-
+  
 # pull Cubic Device transactions
+  
 cubic_use_trx <- dbGetQuery(con_dmap, paste0(
   "select (transaction_dtm - interval '3 hours')::date AS svc_date, * from public.use_transaction_location
   WHERE (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]),"'"
 )) %>%
-  left_join(stop_point_rt %>% transmute(stop_point_id = stop_point_id %>% as.double(),
-                                        stop_id = external_stop_point_id), 
-            by = "stop_point_id") %>%
-   mutate(stop_name = str_split(stop_point_name, " :", simplify = T)[,1])
+  
+  
+#cubic_use_trx <- dbGetQuery(con_dmap, paste0(
+#  "select (transaction_dtm - interval '3 hours')::date AS svc_date, * from public.use_transaction_location
+#  WHERE (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]),"'"
+#)) %>%
+#  left_join(stop_point_rt %>% transmute(stop_point_id = stop_point_id %>% as.double(),
+#                                        stop_id = external_stop_point_id), 
+#            by = "stop_point_id") %>%
+#   mutate(stop_name = str_split(stop_point_name, " :", simplify = T)[,1])
 
 cubic_use_trx1 <- cubic_use_trx %>%
   filter(transaction_dtm >= ymd(20240715),
