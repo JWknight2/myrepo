@@ -157,19 +157,19 @@ user_path <- path_home()
 write.csv(subway_only, file = paste0(user_path, "/OneDrive - MBTA/Desktop/subway_discrepancies_0121.csv"), row.names = F)
 ```
 
-#Analysis 4
+#Analysis 4 (rewrite this as needed for Mieka asks)
 
 ```{r}
-jan_discrepancies_total <- dbGetQuery(con_rs, paste0("SELECT * FROM ridership.afc2_device_location_issues WHERE svc_date BETWEEN '2025-01-01' AND '2025-01-31'"))
+feb_discrepancies_total <- dbGetQuery(con_rs, paste0("SELECT * FROM ridership.afc2_device_location_issues WHERE svc_date BETWEEN '2025-02-01' AND '2025-02-28'"))
 ```
 
 ```{r}
-table(jan_discrepancies_total$svc_date)
+table(feb_discrepancies_total$svc_date)
 ```
 
 ```{r}
 user_path <- path_home()
 
-write.csv(jan_discrepancies_total, file = paste0(user_path, "/OneDrive - MBTA/Desktop/jan_discrepancies_total.csv"), row.names = F)
+write.csv(feb_discrepancies_total, file = paste0(user_path, "/OneDrive - MBTA/Desktop/feb_discrepancies_total.csv"), row.names = F)
 ```
 
