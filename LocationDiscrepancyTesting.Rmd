@@ -55,10 +55,10 @@ con_rs <-
     sslmode = "require"
   )
 
-stop_point_rt <- dbGetQuery(con_dmap, paste0(
-  "SELECT stop_point_id, stop_point_name, external_stop_point_id
-  FROM ods.edw_stop_point_dimension"
-))
+#stop_point_rt <- dbGetQuery(con_dmap, paste0(
+#  "SELECT stop_point_id, stop_point_name, external_stop_point_id
+#  FROM ods.edw_stop_point_dimension"
+#))
 
 ```
 
@@ -76,8 +76,8 @@ cubic_use_trx <- dbGetQuery(con_dmap, paste0(
   "select (transaction_dtm - interval '3 hours')::date AS svc_date, * from public.use_transaction_location
   WHERE (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]),"'"
 )) %>%
-  mutate(stop_point_id = as.double(stop_point_id)) %>%
-  rename(stop_id = external_stop_point_id) %>%
+  mutate(as.double(stop_point_id)) %>%
+  mutate(stop_id = external_stop_point_id) %>%
   mutate(stop_name = str_split(stop_point_name, " :", simplify = T)[,1])
   
   
