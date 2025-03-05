@@ -1,0 +1,717 @@
+---
+title: "afc1_afc2_transactions"
+author: "Megan Willis-Jackson, Mgr Ridership Reporting, OPMI"
+output: html_document
+date: "2025-02-28"
+---
+
+---
+### AFC1 vs AFC2 Transactions Comparison
+---
+
+### Summary of Purpose: 
+- This script is used to analyze how many daily transactions are AFC2 
+  transactions since its implementation and what proportion of overall 
+  transactions that represents per day. These daily totals are compared with 
+  AFC1 transactions per day and overall trends are examined over time.
+
+### Reviewer:
+- *Name of the Reviewer*
+
+### Review Date:
+- *Date of Review*
+
+---
+
+### OPMI Partner Department (if applicable):
+- Fare Revenue / AFC2.0 Team
+
+### Data Sources:
+- This script will pull the most recent transactions available in the 
+  DMAP public.use_transaction_location table on TID's DMAP data lake.
+
+- *Data Source 1*: AFC2 transactions [public.use_transaction_location on DMAP]
+- *Data Source 2*: GTFS location data [gtfs_post_recap.stops_2024_2_recap on 
+                   Research Server]
+- *Data Source 3*: Device ID data for buses [ridership.vehicle_device_ids_bus 
+                   on Research Server]
+- *Data Source 4*: Device ID data for light rail vehicles [ridership.vehicle
+                   _device_ids_lrvs on Research Server]
+- *Data Source 5*: Crosswalk data [ridership.crosswalk_sb_cubic on Research 
+                   Server]
+- *Data Source 6*: Timetable data [afc.tvmtable on Research Server]
+- *Data Source 7*: Calendar data [ridership.calendar on Research Server]
+- *Data Source 8*: ODX fare transaction table [odx2.fare_transaction on 
+                   Research Server]
+
+### Data Outputs:
+- *Data Output 1*: Ridership table [ridership.afc_transactions on Research 
+                   Server]
+- *Data Output 2*: System Validations dashboard [New_AFC2_Dashboards on Tableau 
+                   Server]
+
+### Audience: 
+- Fare Revenue Team and Performance Management Team
+
+### Updates:
+- R script that pulls recent data no longer needs to be run manually. Process 
+  now automated and handled by VisualCron. Prep flow that succeeds this script 
+  (see below) also now automated and put on daily schedule.
+
+### Caveats:
+- Data consistently runs on a 2-day lag.
+
+### Scripts before & after:
+- To update the online dashboards, this prep flow on the Tableau Server must be 
+  run (now automated): https://awdata.mbta.com/#/flows/751/overview
+
+
+# load libraries, set date parameters
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(DBI) #for the SQL queries
+library(RPostgres) #for the Postgres Server connection
+library(sf)
+library(ggspatial)
+library(units)
+library(opmitools)
+library(here)
+
+options(scipen = 999) #(this gets rid of scientific notation throughout the session)
+
+
+
+start_date <- ymd(20250220)
+end_date <- ymd(20250223)
+
+
+
+
+
+```
+
+# Research Server & DMAP DB connection
+use this chunk if you don't have .Renviron set up
+```{r}
+#Usernames for sharepoint and pgAdmin
+user_sp <- "jknight2"
+user_rs <- "jknight"
+user_dmap <- "jknight2"
+
+sp_link <- paste0("C:/Users/",user_sp,"/OneDrive - MBTA/Documents - OPMI/02 Active Projects/2024 AFC 2.0/Public Rollout Analyses/Tableau/")
+
+# connection to AWS
+con_dmap <-
+  dbConnect(
+    Postgres(),
+    dbname = "dmap_import",
+    user = user_dmap,
+    password = rstudioapi::askForPassword(),
+    port = 5432,
+    host = "dmap-import-prod.cluster-ro-cw84s0ixvuei.us-east-1.rds.amazonaws.com",
+    sslmode = "require"
+  )
+
+con_rs <-
+  dbConnect(
+    Postgres(),
+    dbname = "mbta_dw",
+    user = user_rs,
+    password = rstudioapi::askForPassword(),
+    port = 5432,
+    host = "opmi-research-server.cluster-csb3ld1kts7u.us-east-1.rds.amazonaws.com",
+    sslmode = "require"
+  )
+
+```
+
+use this chunk if you do have .Renviron set up
+```{r}
+
+user_box <- Sys.getenv("user_box")
+
+con_dmap <- dbConnect(
+  RPostgres::Postgres(),
+  dbname = Sys.getenv("DMAP_DB_NAME"),
+  host = Sys.getenv("DMAP_DB_HOST"),
+  port = Sys.getenv("DMAP_DB_PORT"),
+  user = Sys.getenv("DMAP_DB_USER"),
+  password = Sys.getenv("DMAP_DB_PASSWORD")
+)
+
+con_rs <- dbConnect(
+  RPostgres::Postgres(),
+  dbname = Sys.getenv("RS_DB_NAME"),
+  host = Sys.getenv("RS_DB_HOST"),
+  port = Sys.getenv("RS_DB_PORT"),
+  user = Sys.getenv("RS_DB_USER"),
+  password = Sys.getenv("RS_DB_PASSWORD")
+)
+
+
+```
+
+
+# constants
+```{r}
+
+gtfs_stops <- dbGetQuery(con_rs, paste0(
+  "SELECT * FROM gtfs_post_recap.stops_2024_2_recap"
+))
+
+
+stop_point_buffer <- gtfs_stops %>%
+  filter(zone_id != "") %>%
+  mutate(mode = case_when(grepl("Bus",zone_id)>0 | grepl("SL",zone_id)>0 ~ "Bus",
+                          zone_id == "RapidTransit" ~ "Subway",
+                          T ~ "Other")) %>%
+  group_by(stop_name, mode) %>%
+  summarise(stop_lat = min(stop_lat),
+            stop_lon = min(stop_lon)) %>%
+  st_as_sf(coords = c("stop_lon","stop_lat"), crs = 4326) %>%
+  st_buffer(dist = set_units(150,"m"))
+
+cubic_bus <- dbGetQuery(con_rs, paste0(
+  "SELECT device_id, 'Bus' AS operator_name FROM ridership.vehicle_device_ids_bus"
+))
+
+cubic_lr <- dbGetQuery(con_rs, paste0(
+  "SELECT device_id, 'Subway' AS operator_name FROM ridership.vehicle_device_ids_lrvs"
+))
+
+
+cubic_device <- dbGetQuery(con_rs, paste0(
+  "SELECT 
+    sb_deviceid::text,
+    cubic_deviceid,
+    cw.station_name,
+    locationid, 
+    CASE WHEN stop_id IS NULL AND cw.station_name = 'Charles/MGH' THEN 'place-chmnl' ELSE stop_id END AS stop_id
+  FROM ridership.crosswalk_sb_cubic cw
+  LEFT JOIN afc.tvmtable tvm ON tvm.deviceid = cw.sb_deviceid
+  LEFT JOIN ridership.location_ids_gtfs li ON li.stationid = locationid"
+)) %>%
+  filter(!is.na(sb_deviceid)) %>%
+  unique()
+
+device_lookup <- dbGetQuery(con_rs, paste0(
+  "SELECT deviceclassid, 
+  CASE WHEN deviceclassid IN (501,503)
+    THEN CONCAT(deviceclassid, deviceid)
+    ELSE deviceid::text END AS deviceid,
+    locationid, stop_id, 
+  CASE
+    WHEN deviceclassid IN (411
+                      		,412
+                      	,421
+                      	,422
+                      		,441
+                      		,442
+                      		,443
+                      	,451
+                      	,452
+                      		,501
+                      		,503)
+      THEN 1
+    WHEN deviceid IN (SELECT deviceid FROM playpen.glx_fvms)
+      THEN 1
+    ELSE 0
+    END AS sb_device 
+  FROM afc.tvmtable tt
+  LEFT JOIN afc.tvmstation ts ON ts.stationid = tt.locationid
+  LEFT JOIN ridership.location_ids_gtfs li ON li.stationid = tt.locationid
+  WHERE (deviceclassid IN (411
+                      		,412
+                      	,421
+                      	,422
+                      		,441
+                      		,442
+                      		,443
+                      	,451
+                      	,452
+                      		,501
+                      		,503)
+      OR deviceid IN (SELECT deviceid FROM playpen.glx_fvms))"
+)) %>%
+  # filter(!is.na(stop_id)) %>%
+  left_join(gtfs_stops %>% transmute(stop_id, stop_name_gtfs = stop_name),
+            by = "stop_id") %>%
+  mutate(stop_name_gtfs = case_when(locationid %in% c(14,15,16,18) ~ "S&B Light Rail",
+                                    deviceclassid %in% c(501,503) ~ "S&B Bus",
+                                    T ~ stop_name_gtfs),
+         operator_name = case_when(locationid %in% c(14,15,16,18) ~ "Subway",
+                                   deviceclassid %in% c(501, 503) ~ "Bus",
+                                   T ~ "Subway")) %>%
+  unique() %>%
+  rbind(cubic_device %>%
+          transmute(deviceclassid = substr(cubic_deviceid, 1, 3),
+                    deviceid = cubic_deviceid,
+                    locationid = case_when(station_name == "Charles/MGH" ~ 2106,
+                                           T ~ locationid), 
+                    stop_id, sb_device = 0,
+                    stop_name_gtfs = station_name,
+                    operator_name = "Subway")) %>%
+  rbind(cubic_bus %>%
+          transmute(deviceclassid = "BMV",
+                    deviceid = device_id,
+                    locationid = 5,
+                    stop_id = NA, sb_device = 0,
+                    stop_name_gtfs = NA,
+                    operator_name = "Bus")) %>%
+  rbind(cubic_lr %>%
+          transmute(deviceclassid = "BMV",
+                    deviceid = device_id,
+                    locationid = 14,
+                    stop_id = NA, sb_device = 0,
+                    stop_name_gtfs = NA,
+                    operator_name = "Subway")) 
+
+cal <- dbGetQuery(con_rs, paste0(
+  "SELECT servicedate svc_date, day FROM ridership.calendar"
+))
+
+```
+
+
+```{r}
+
+# look at taps by operating date, by device position. see if there are differences between middle readers and devices by the operators
+
+
+load_dates <- seq.Date(start_date, end_date, "day")
+
+for (sdate in 1:length(load_dates)){
+
+
+dbExecute(con_rs, paste0("set timezone TO 'America/New_York';"))
+
+trx_stage <- dbGetQuery(con_rs, paste0(
+  "select ft.*, 
+  s.stage_key, s.jny_seq, s.stage_seq, s.origin, s.destination, s.o_time, s.d_time, s.num_riders,
+  s.o_txn_key, s.d_txn_key, s.o_code, s.d_code, s.x_code,
+  fp.fare_prod_name, fp.fare_prod_desc, fp.category_key, fp.rider_type_key, fp.days_valid, fp.temporal_validity,
+  category_name,
+t.route_id alt_route_id, t.dir_id alt_dir_id, v.stop_id odx_stop_id
+FROM odx2.fare_transaction ft
+LEFT JOIN (SELECT * FROM odx2.stage WHERE svc_date = '", as.character(load_dates[sdate]), "') AS s ON s.o_txn_key = ft.txn_key
+LEFT JOIN (SELECT * FROM odx2.ride WHERE svc_date = '", as.character(load_dates[sdate]), "' AND ride_seq = 1) AS r USING(stage_key)
+LEFT JOIN (SELECT * FROM odx2.visit WHERE svc_date = '", as.character(load_dates[sdate]), "') AS v ON v.visit_key = r.start_visit_key
+LEFT JOIN (SELECT * FROM odx2.trip WHERE svc_date = '", as.character(load_dates[sdate]), "') AS t USING(trip_key)
+LEFT JOIN odx2.fare_product fp USING (fare_prod_id) 
+LEFT JOIN odx2.fare_product_category USING(category_key)
+
+WHERE ft.svc_date = '", as.character(load_dates[sdate]), "'
+AND 
+action_key <= 2"
+)) %>%
+  left_join(device_lookup, 
+            by = c("device_id" = "deviceid")) %>%
+  left_join(gtfs_stops %>% transmute(odx_stop_id = stop_id,
+                                     odx_stop_name = stop_name),
+            by = "odx_stop_id") %>%
+  mutate(devicetype = deviceclassid) %>%
+  filter(!canceled)
+
+trx_latlon <- trx_stage %>%
+  filter(devicetype == "BMV",
+         !is.na(lat),
+         is.na(odx_stop_name)) %>%
+  transmute(txn_key, vehicle_id = vehicle_id %>% as.numeric(), 
+            operator_name, lat, lon) %>%
+  st_as_sf(coords = c("lon","lat"), crs = 4326) %>%
+  st_join(stop_point_buffer, suffix = c("_from_stoppoint","_from_coordinates")) %>%
+  as.data.frame() %>%
+  mutate(match = case_when(operator_name == mode ~ 1,
+                           T ~ 0)) %>%
+  group_by(txn_key) %>%
+  arrange(txn_key,desc(match)) %>%
+  mutate(sequence = row_number()) %>%
+  ungroup() %>%
+  filter(sequence == 1) %>%
+  transmute(txn_key, latlon_stop_name = stop_name)
+
+
+trx_stage_location <- trx_stage %>%
+  left_join(trx_latlon, by = "txn_key") %>%
+  filter(sb_device == 1 | devicetype %in% c("BMV","HBG","ATV","HHU")) %>%
+  transmute(txn_key, svc_date, txn_time, card, device_id, devicetype, vehicle_id, route_id, alt_route_id, 
+            place_id, lat, lon,
+            origin, fare_prod_name, category_name, odx_stop_id, gtfs_stop_id = stop_id, 
+            stop_name_gtfs, locationid, latlon_stop_name, num_riders,
+            system = case_when(devicetype %in% c("BMV","HBG","ATV","HHU") ~ "AFC2",
+                               T ~ "AFC1"),
+            stop_compiled = case_when(!is.na(odx_stop_name) ~ odx_stop_name,
+                                      !is.na(stop_name_gtfs) ~ stop_name_gtfs,
+                                      !is.na(origin) ~ origin,
+                                      !is.na(latlon_stop_name) ~ latlon_stop_name,
+                                      T ~ "Unknown"),
+            operator_name) 
+
+
+
+max_afc2_odx <- trx_stage_location %>%
+  group_by(system) %>%
+  summarise(max_date = max(svc_date, na.rm = T)) %>%
+  filter(system == "AFC2") %>%
+  select(max_date)
+
+
+  if(length(trx_latlon$txn_key) < 1000){
+trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
+  "SELECT
+  transaction_dtm,
+  (transaction_dtm - interval '3 hours')::date AS svc_date,
+  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
+  sum(ride_count) ride_count
+  FROM public.use_transaction_location
+  WHERE reference_notes IS NULL
+  AND device_id IS NOT NULL
+  AND media_class_name != 'Open Transit Token'
+  AND (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'",
+  "GROUP BY 1,2,3,4,5,6,7,8,9
+  ORDER BY 1"
+)) %>%
+  left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
+            by = c("device_id" = "deviceid")) 
+} else{
+              trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
+  "SELECT
+  transaction_dtm,
+  (transaction_dtm - interval '3 hours')::date AS svc_date,
+  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
+  sum(ride_count) ride_count
+  FROM public.use_transaction_location
+  WHERE reference_notes IS NULL
+  AND device_id IS NOT NULL
+  AND media_class_name != 'Open Transit Token'
+  AND (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'",
+  # "2024-08-16"
+  # max_afc2_odx$max_date %>% as.character()
+  # ,"' AND (transaction_dtm - interval '3 hours')::date <= '"
+  # , as.character(end_date),"' 
+  "GROUP BY 1,2,3,4,5,6,7,8,9
+  ORDER BY 1"
+)) %>%
+  left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
+            by = c("device_id" = "deviceid")) %>%
+                head(0)
+              }
+
+trx_cubic_latlon <- trx_cubic_recent %>%
+  filter(grepl("BMV", device_id) > 0,
+         !is.na(lat)) %>%
+  transmute(device_id, transaction_dtm, vehicle_id = bus_id %>% as.numeric(), 
+            operator_name,
+            lat, lon) %>%
+  st_as_sf(coords = c("lon","lat"), crs = 4326) %>%
+  st_join(stop_point_buffer, suffix = c("_from_stoppoint","_from_coordinates")) %>%
+  as.data.frame() %>%
+  mutate(match = case_when(operator_name == mode ~ 1,
+                           T ~ 0)) %>%
+  group_by(transaction_dtm, device_id) %>%
+  arrange(transaction_dtm, device_id, desc(match)) %>%
+  mutate(sequence = row_number()) %>%
+  ungroup() %>%
+  filter(sequence == 1) %>%
+  transmute(transaction_dtm, device_id, latlon_stop_name = stop_name)
+
+trx_cubic_recent_location <- trx_cubic_recent %>%
+  left_join(trx_cubic_latlon, by = c("transaction_dtm","device_id")) %>%
+  mutate(stop_compiled = case_when(!is.na(stop_name_gtfs) ~ stop_name_gtfs,
+                                   !is.na(latlon_stop_name) ~ latlon_stop_name,
+                                   T ~ "Unknown"),
+         devicetype = substr(device_id, start = 1, stop = 3)) %>%
+  filter(ride_count > 0)
+
+trx_all_append <- trx_stage_location %>%
+  select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
+         system, operator_name, stop_compiled) %>%
+  rbind(trx_cubic_recent_location %>% 
+          transmute(svc_date, txn_time = transaction_dtm, device_id, devicetype,
+                    category_name, fare_prod_name, system = "AFC2", operator_name, stop_compiled)) %>%
+  mutate(hour = floor_date(txn_time, "hour") %>% format(format = "%H:%M"),
+         pax = 1,
+         inserted_date = Sys.Date()) %>%
+  rename(stop_name = stop_compiled,
+         num_riders = pax) %>%
+  left_join(cal, by = "svc_date") %>%
+  select(svc_date, day, everything())
+
+distinct_dates <- trx_all_append %>%
+  group_by(svc_date) %>%
+  summarise(svc_date = min(svc_date) %>% as.character()) 
+
+dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "'")
+
+
+# add data to afc_transactions on the research server
+dbExecute(con_rs, paste0(
+  "DELETE FROM ridership.afc_transactions WHERE svc_date IN (",dates_to_drop,");"
+))
+
+dbAppendTable(con_rs, Id(schema = "ridership", table = "afc_transactions"), trx_all_append)
+
+}
+
+```
+
+# pull data for analysis
+```{r}
+trx <- dbGetQuery(con_rs, paste0(
+  "SELECT * FROM ridership.afc_transactions
+  where svc_date >= '2025-01-01'"
+))
+
+trx_total <- trx %>%
+  filter(day != "Holiday") %>%
+  mutate(day = case_when(day %in% c("Saturday","Sunday") ~ "Weekend",
+                         T ~ day),
+         month = month(svc_date)) %>%
+  group_by(month, day, system) %>%
+  summarise(txn = sum(num_riders, na.rm = T)) %>%
+  group_by(month, day) %>%
+  mutate(total = sum(txn),
+         pct = txn / total)
+
+glx_trx <- trx %>%
+  filter(stop_name %in% c("Union Square","Lechmere","East Somerville","Gilman Square","Magoun Square","Ball Square","Medford/Tufts"))
+
+glx <- glx_trx %>%
+  group_by(svc_date, system) %>%
+  summarise(txn = sum(num_riders, na.rm = T))
+
+ggplot(glx) +
+  geom_line(aes(x = svc_date, y = txn, group = system, color = system))
+
+ggplot(glx %>% filter(system == "AFC1")) +
+  geom_line(aes(x = svc_date, y = txn, group = system, color = system))
+
+
+```
+
+# summaries
+```{r}
+system_summary <- trx %>%
+  group_by(svc_date, day, system) %>%
+  summarise(trx_count = n()) %>%
+  pivot_wider(id_cols = c(svc_date, day), names_from = system, values_from = trx_count) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2)))
+
+write.csv(system_summary, "system_summary.csv", row.names = F)
+
+operator_summary <- trx %>%
+  group_by(svc_date, day, system, operator_name) %>%
+  summarise(trx_count = n()) %>%
+  pivot_wider(id_cols = c(svc_date, day, operator_name), names_from = system, values_from = trx_count) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2)))
+
+# write.csv(operator_summary, "operator_summary.csv", row.names = F)
+
+
+stop_summary <- trx_all %>%
+  group_by(svc_date, day, system, operator_name, stop_name) %>%
+  summarise(trx_count = n()) %>%
+  pivot_wider(id_cols = c(svc_date, day, operator_name, stop_name), 
+              names_from = system, values_from = trx_count) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2))) %>%
+  group_by(day, operator_name, stop_name) %>%
+  summarise(AFC1 = sum(AFC1, na.rm = T) / n(),
+            AFC2 = sum(AFC2, na.rm = T) / n()) %>%
+  group_by(day) %>%
+  arrange(day, desc(AFC2)) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2)),
+         rank = row_number())
+
+stop_summary_weekday <- stop_summary %>%
+  filter(day == "Weekday",
+         between(rank, 1, 25)) %>%
+  mutate(label = factor(stop_name, levels = stop_name[order(rank)]))
+
+stop_summary_saturday <- stop_summary %>%
+  filter(day == "Saturday",
+         between(rank, 1, 25)) %>%
+  mutate(label = factor(stop_name, levels = stop_name[order(rank)]))
+
+stop_summary_sunday <- stop_summary %>%
+  filter(day == "Sunday",
+         between(rank, 1, 25)) %>%
+  mutate(label = factor(stop_name, levels = stop_name[order(rank)]))
+
+
+
+# write.csv(stop_summary, "stop_summary.csv", row.names = F)
+
+
+hour_summary <- trx_all %>%
+  group_by(svc_date, day, system, hour) %>%
+  summarise(trx_count = n()) %>%
+  pivot_wider(id_cols = c(svc_date, day, hour),
+              names_from = system, values_from = trx_count) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2))) %>%
+  group_by(day, hour) %>%
+  summarise(AFC1 = sum(AFC1, na.rm = T) / n(),
+            AFC2 = sum(AFC2, na.rm = T) / n()) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2))) 
+
+# write.csv(hour_summary, "hour_summary.csv", row.names = F)
+
+
+hour_summary_operator <- trx_all %>%
+  group_by(svc_date, day, system, operator_name, hour) %>%
+  summarise(trx_count = n()) %>%
+  pivot_wider(id_cols = c(svc_date, day, operator_name, hour),
+              names_from = system, values_from = trx_count) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2))) %>%
+  group_by(day, hour, operator_name) %>%
+  summarise(AFC1 = sum(AFC1, na.rm = T) / n(),
+            AFC2 = sum(AFC2, na.rm = T) / n()) %>%
+  mutate(pct_afc2 = case_when(is.na(AFC2 / (AFC1 + AFC2)) ~ 0,
+                              T ~ AFC2 / (AFC1 + AFC2))) 
+
+
+# trx_cubic_odx <- trx_stage %>%
+#   filter(devicetype %in% c("BMV","HBG","ATV","HHU"),
+#          svc_date == ymd(20240726))
+# 
+# trx_cubic_dmap <- dbGetQuery(con_dmap, paste0(
+#   "SELECT transaction_dtm, transit_account_id::text, device_id,
+#   txn_desc, txn_status_name, ride_count, _exported_dtm FROM public.use_transaction_location
+#   WHERE transaction_dtm::date = '2024-07-26'
+#   AND reference_notes IS NULL"
+# ))
+# 
+# tmp <- trx_cubic_dmap %>%
+#   left_join(trx_cubic_odx %>%
+#               transmute(transaction_dtm = txn_time,
+#                         transit_account_id = account_key, device_id,
+#                         txn_key),
+#             by = c("transaction_dtm","transit_account_id","device_id"))
+# 
+# 
+# tmp2 <- tmp %>%
+#   group_by(transaction_dtm, transit_account_id, device_id, txn_desc, txn_key) %>%
+#   summarise(ride_count = sum(ride_count),
+#             num_trx = n()) %>%
+#   mutate(question = case_when(is.na(txn_key) & ride_count > 0 ~ T,
+#                               T ~ F))
+# %>%
+#   left_join(device_lookup %>% select(cubic_deviceid, stop_name_gtfs),
+#             by = c("device_id" = "cubic_deviceid"))
+# 
+
+```
+
+```{r}
+aspect_ratio <- 16/9
+
+ggplot(system_summary %>% 
+         pivot_longer(cols = c(AFC1, AFC2, pct_afc2), names_to = "metric", values_to = "value") %>%
+         filter(metric != "pct_afc2")) +
+  geom_col(aes(x = svc_date %>% as.Date(), y = value, group = metric, fill = metric)) +
+  geom_text(data = system_summary, 
+            aes(x = svc_date %>% as.Date(), y = AFC2 + 6000, label = paste0(AFC2 %>% prettyNum(big.mark = ","),"~",round(pct_afc2*100),"%")),
+            size = 12) +
+  scale_x_date(name = "Service Date", date_breaks = "1 day", date_labels = "%b %d") +
+  scale_y_continuous(name = "Validations",
+                     breaks = breaks<-seq(0,300000,50000),
+                     labels = prettyNum(breaks, big.mark = ",")) +
+  scale_fill_opmi() +
+  theme_opmi(base_size = 40) +
+  theme(axis.text.x = element_text(size = 40),
+        axis.text.y = element_text(size = 40)) 
+
+ggsave("graphics/system_summary.jpg", width = 10, height = 10*1/aspect_ratio)
+
+
+
+ggplot(operator_summary, 
+       aes(x = svc_date %>% as.Date(), y = pct_afc2, 
+           group = operator_name, fill = operator_name)) +
+  geom_col(position = "dodge") +
+  scale_x_date(name = "Service Date", date_breaks = "1 day", date_labels = "%b %d") +
+  scale_y_continuous(name = "AFC2 Percent\nof Total\nTransactions",
+                     breaks = breaks<- seq(0,max(operator_summary$pct_afc2, na.rm = T), by = .02),
+                     labels = paste0(breaks*100,"%")) +
+  scale_fill_opmi() +
+  theme_opmi(base_size = 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 40),
+        axis.text.y = element_text(size = 40)) 
+
+ggsave("graphics/operator_summary.jpg", width = 10, height = 10*1/aspect_ratio)
+
+ggplot(hour_summary,
+       aes(x = hour, y = pct_afc2, fill = day)) +
+  geom_col(position = "dodge") +
+  scale_x_discrete(name = "Time of Day") +
+  scale_y_continuous(name = "AFC2\nAvg Daily\nPercent\nof Total\nTransactions",
+                     breaks = breaks<- seq(0,max(hour_summary$pct_afc2, na.rm = T), by = .01),
+                     labels = paste0(breaks*100,"%")) +
+  scale_fill_opmi(reverse = T) +
+  theme_opmi(base_size = 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20)) +
+  facet_wrap(~day)
+
+ggsave("graphics/hour_summary.jpg", width = 10, height = 10*1/aspect_ratio)
+
+
+
+ggplot(hour_summary_operator #%>% filter(svc_date == max(hour_summary_operator$svc_date))
+       ) +
+  geom_col(aes(x = hour, y = AFC2, group = operator_name, fill = operator_name)) +
+  scale_x_discrete(name = "Time of Day") +
+  scale_y_continuous(name = "Avg Daily\nAFC2\nTransactions") +
+  scale_fill_opmi() +
+  theme_opmi(base_size = 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20)) +
+  facet_wrap(~day)
+
+ggsave("graphics/hour_summary_operator.jpg", width = 10, height = 10*1/aspect_ratio)
+  
+
+ggplot(stop_summary_weekday) +
+  geom_col(aes(x = label, y = AFC2), fill = "#432533") +
+  geom_text(aes(x = label, y = AFC2 + 40, label = paste0(round(pct_afc2 * 100),"%")), size = 12) +
+  scale_y_continuous(name = "Avg Daily\nAFC2 Taps") +
+  scale_x_discrete(name = NULL) +
+  facet_wrap(~day) +
+  theme_opmi(base_size = 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 30)) +
+  facet_wrap(~day)
+
+ggsave("graphics/stop_summary_weekday.jpg", width = 10, height = 10*1/aspect_ratio)
+
+
+ggplot(stop_summary_saturday) +
+  geom_col(aes(x = label, y = AFC2), fill = "#258EBA") +
+  geom_text(aes(x = label, y = AFC2 + 40, label = paste0(round(pct_afc2 * 100),"%")), size = 12) +
+  scale_y_continuous(name = "Avg Daily\nAFC2 Taps") +
+  scale_x_discrete(name = NULL) +
+  facet_wrap(~day) +
+  theme_opmi(base_size = 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 30)) +
+  facet_wrap(~day)
+
+ggsave("graphics/stop_summary_saturday.jpg", width = 10, height = 10*1/aspect_ratio)
+
+ggplot(stop_summary_sunday) +
+  geom_col(aes(x = label, y = AFC2), fill = "#62BDAF") +
+  geom_text(aes(x = label, y = AFC2 + 40, label = paste0(round(pct_afc2 * 100),"%")), size = 12) +
+  scale_y_continuous(name = "Avg Daily\nAFC2 Taps") +
+  scale_x_discrete(name = NULL) +
+  facet_wrap(~day) +
+  theme_opmi(base_size = 40) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 30)) +
+  facet_wrap(~day)
+
+ggsave("graphics/stop_summary_sunday.jpg", width = 10, height = 10*1/aspect_ratio)
+
+
+```
