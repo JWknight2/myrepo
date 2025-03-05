@@ -21,7 +21,7 @@ options(scipen = 999) #(this gets rid of scientific notation throughout the sess
 
 
 
-start_date <- ymd(20250221)
+start_date <- ymd(20250201)
 end_date <- ymd(20250228)
 
 
