@@ -7,12 +7,15 @@ date: "2025-02-28"
 
 # load libraries, set date parameters
 ```{r setup, include=FALSE}
+library(fs)
+library(dplyr)
 library(tidyverse)
 library(lubridate)
 library(DBI) #for the SQL queries
 library(RPostgres) #for the Postgres Server connection
 library(sf)
 library(ggspatial)
+library(prettymapr)
 library(units)
 library(opmitools)
 library(here)
