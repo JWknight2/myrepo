@@ -112,7 +112,7 @@ gtfs_stops <- dbGetQuery(con_rs, paste0(
 location_tmp <- cubic_use_trx1 %>%
   transmute(id, svc_date, device_id, transaction_dtm, operator_name, external_route_id,
          stop_point_id, stop_point_name, stop_id, 
-         stop_name, latitude, longitude, bus_id, ride_count, external_stop_point_id) %>%
+         stop_name, latitude, longitude, bus_id, ride_count) %>%
   group_by(across(c(-ride_count, -id))) %>%
   arrange(transaction_dtm, desc(ride_count)) %>%
   summarise(id = first(id),
@@ -132,7 +132,7 @@ null_location <- location_tmp %>%
          !device_id == "BMV00000") %>%
   transmute(svc_date, device_id, transaction_dtm,
             operator_name, external_route_id, bus_id,
-            ride_count, external_stop_point_id, dist_btn = NA, 
+            ride_count, dist_btn = NA, 
             over_150m = case_when(is.na(latitude) ~ "BMV Trx Missing Lat/Lon",
                                   is.na(stop_point_name) ~ "BMV Trx Missing Stop Point Name"),
             stop_name_from_stoppoint = case_when(is.na(stop_name) ~ "Missing",
@@ -142,7 +142,7 @@ null_location <- location_tmp %>%
 
 
 stop_point_coords <- location %>%
-  select(id, svc_date, stop_id, stop_name, stop_lat, stop_lon, external_stop_point_id) %>%
+  select(id, svc_date, stop_id, stop_name, stop_lat, stop_lon) %>%
   st_as_sf(coords = c("stop_lon","stop_lat"), crs = 4326)
 
 location_trx <- location %>%
@@ -197,7 +197,7 @@ full_actual_stop <- location_trx_dist %>%
 
 rs_device_location <- full_actual_stop %>% 
   transmute(svc_date, device_id, transaction_dtm, operator_name, 
-            external_route_id, bus_id, ride_count, external_stop_point_id, dist_btn = dist_btn %>% as.numeric(), 
+            external_route_id, bus_id, ride_count, dist_btn = dist_btn %>% as.numeric(), 
             over_150m = over_100m, stop_name_from_stoppoint, stop_name_from_coordinates) %>%
   rbind(null_location)
 
