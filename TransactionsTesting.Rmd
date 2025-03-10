@@ -366,3 +366,16 @@ user_path <- path_home()
 
 write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_feb_new.csv"), row.names = F)
 ```
+
+```{r}
+sort(table(trx_all_append$stop_id))
+```
+
+```{r}
+sort(table(trx_stage_location$odx_stop_id))
+```
+
+```{r}
+sort(table(trx_cubic_recent_location$stop_id))
+```
+
