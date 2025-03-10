@@ -294,7 +294,7 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   "SELECT
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
-  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, external_stop_point_id AS stop_id, latitude lat, longitude lon,
+  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, external_stop_point_id AS stop_id, latitude AS lat, longitude AS lon,
   sum(ride_count) ride_count
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
