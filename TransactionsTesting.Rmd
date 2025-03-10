@@ -277,14 +277,14 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   "SELECT
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
-  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, external_stop_point_id stop_id, latitude lat, longitude lon,
+  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon, external_stop_point_id stop_id,
   sum(ride_count) ride_count
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
   AND device_id IS NOT NULL
   AND media_class_name != 'Open Transit Token'
   AND (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'",
-  "GROUP BY 1,2,3,4,5,6,7,8,9
+  "GROUP BY 1,2,3,4,5,6,7,8,9,10
   ORDER BY 1"
 )) %>%
   left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
@@ -294,7 +294,7 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   "SELECT
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
-  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, external_stop_point_id stop_id, latitude lat, longitude lon,
+  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon, external_stop_point_id stop_id,
   sum(ride_count) ride_count
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
@@ -305,7 +305,7 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   # max_afc2_odx$max_date %>% as.character()
   # ,"' AND (transaction_dtm - interval '3 hours')::date <= '"
   # , as.character(end_date),"' 
-  "GROUP BY 1,2,3,4,5,6,7,8,9
+  "GROUP BY 1,2,3,4,5,6,7,8,9,10
   ORDER BY 1"
 )) %>%
   left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
