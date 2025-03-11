@@ -335,7 +335,9 @@ trx_cubic_recent_location <- trx_cubic_recent %>%
   filter(ride_count > 0)
 
 trx_all_append <- trx_cubic_recent_location %>%
-  filter(system = "AFC2") %>%
+  filter(system == "AFC2")
+
+trx_all_append <- trx_all_append %>%
   rename(txn_time = transaction_dtm) %>%
   select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
          system, operator_name, stop_compiled, stop_id) %>%
