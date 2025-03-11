@@ -334,6 +334,23 @@ trx_cubic_recent_location <- trx_cubic_recent %>%
          devicetype = substr(device_id, start = 1, stop = 3)) %>%
   filter(ride_count > 0)
 
+trx_all_append <- trx_cubic_recent_location %>%
+  filter(system = "AFC2") %>%
+  rename(txn_time = transaction_dtm) %>%
+  select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
+         system, operator_name, stop_compiled, stop_id) %>%
+  rbind(trx_stage_location %>%
+          transmute(svc_date, txn_time, device_id, devicetype, category_name, 
+                    fare_prod_name, system, operator_name, stop_compiled, stop_id 
+                    = odx_stop_id)) %>%
+  mutate(hour = floor_date(txn_time, "hour") %>% format(format = "%H:%M"),
+         pax = 1,
+         inserted_date = Sys.Date()) %>%
+  rename(stop_name = stop_compiled,
+         num_riders = pax) %>%
+  left_join(cal, by = "svc_date") %>%
+  select(svc_date, day, everything())
+
 #trx_all_append <- trx_stage_location %>%
 #  rename(stop_id = odx_stop_id) %>%
 #  select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
