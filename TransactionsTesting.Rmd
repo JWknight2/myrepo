@@ -24,8 +24,8 @@ options(scipen = 999) #(this gets rid of scientific notation throughout the sess
 
 user_path <- path_home()
 
-start_date <- ymd(20250201)
-end_date <- ymd(20250228)
+start_date <- ymd(20250312)
+end_date <- ymd(20250312)
 ```
 
 # Research Server & DMAP DB connection
@@ -272,7 +272,7 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   "SELECT
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
-  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon, external_stop_point_id,
+  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon, external_stop_point_id AS stop_id,
   sum(ride_count) ride_count
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
@@ -289,7 +289,7 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   "SELECT
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
-  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon, external_stop_point_id,
+  device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon, external_stop_point_id AS stop_id,
   sum(ride_count) ride_count
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
@@ -312,7 +312,7 @@ trx_cubic_latlon <- trx_cubic_recent %>%
   filter(grepl("BMV", device_id) > 0,
          !is.na(lat)) %>%
   transmute(device_id, transaction_dtm, vehicle_id = bus_id %>% as.numeric(), 
-            operator_name, external_stop_point_id,
+            operator_name, stop_id,
             lat, lon) %>%
   st_as_sf(coords = c("lon","lat"), crs = 4326) %>%
   st_join(stop_point_buffer, suffix = c("_from_stoppoint","_from_coordinates")) %>%
@@ -335,12 +335,12 @@ trx_cubic_recent_location <- trx_cubic_recent %>%
   filter(ride_count > 0)
 
 trx_all_append <- trx_stage_location %>%
-  rename(external_stop_point_id = odx_stop_id) %>%
+  rename(stop_id = odx_stop_id) %>%
   select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
-         system, operator_name, stop_compiled, external_stop_point_id) %>%
+         system, operator_name, stop_compiled, stop_id) %>%
   rbind(trx_cubic_recent_location %>% 
           transmute(svc_date, txn_time = transaction_dtm, device_id, devicetype,
-                    category_name, fare_prod_name, system = "AFC2", operator_name, stop_compiled, external_stop_point_id)) %>%
+                    category_name, fare_prod_name, system = "AFC2", operator_name, stop_compiled, stop_id)) %>%
   mutate(hour = floor_date(txn_time, "hour") %>% format(format = "%H:%M"),
          pax = 1,
          inserted_date = Sys.Date()) %>%
@@ -357,7 +357,7 @@ dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "
 
 }
 
-write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_02_28.csv"), row.names = F)
+write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_03_12.csv"), row.names = F)
 ```
 
 ```{r}
