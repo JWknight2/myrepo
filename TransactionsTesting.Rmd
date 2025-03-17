@@ -371,6 +371,38 @@ table(trx_all_append$stop_id)
 ```
 
 ```{r}
-table(trx_stage_location$odx_stop_id)
+sum(is.na(trx_all_append$stop_id))
+```
+
+```{r}
+trx_afc1 <- trx_all_append %>%
+  filter(system == "AFC1")
+
+trx_afc2 <- trx_all_append %>%
+  filter(system == "AFC2")
+```
+
+```{r}
+sum(is.na(trx_afc1$stop_id))
+
+sum(is.na(trx_afc2$stop_id))
+```
+
+```{r}
+sum(is.na(trx_stage$odx_stop_id))
+```
+
+```{r}
+trx_dmap <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, external_stop_point_id FROM public.use_transaction_location WHERE transaction_dtm >= '2025-03-12'"))
+```
+
+```{r}
+trx_dmap <- trx_dmap %>%
+  mutate(svc_date = as.Date(transaction_dtm))
+
+trx_dmap_0312 <- trx_dmap %>%
+  filter(svc_date == '2025-03-12')
+
+sum(is.na(trx_dmap_0312$external_stop_point_id))
 ```
 
