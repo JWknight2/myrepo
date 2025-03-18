@@ -393,7 +393,9 @@ sum(is.na(trx_stage$odx_stop_id))
 ```
 
 ```{r}
-trx_dmap <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, external_stop_point_id FROM public.use_transaction_location WHERE transaction_dtm >= '2025-03-12'"))
+trx_dmap <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, 
+external_stop_point_id FROM public.use_transaction_location WHERE 
+transaction_dtm >= '2025-03-12'"))
 ```
 
 ```{r}
