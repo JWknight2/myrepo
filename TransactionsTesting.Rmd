@@ -24,8 +24,8 @@ options(scipen = 999) #(this gets rid of scientific notation throughout the sess
 
 user_path <- path_home()
 
-start_date <- ymd(20250312)
-end_date <- ymd(20250312)
+start_date <- ymd(20241015)
+end_date <- ymd(20241015)
 ```
 
 # Research Server & DMAP DB connection
@@ -357,7 +357,7 @@ dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "
 
 }
 
-write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_03_12.csv"), row.names = F)
+write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_10_15.csv"), row.names = F)
 ```
 
 ```{r}
@@ -395,16 +395,16 @@ sum(is.na(trx_stage$odx_stop_id))
 ```{r}
 trx_dmap <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, 
 external_stop_point_id FROM public.use_transaction_location WHERE 
-transaction_dtm >= '2025-03-12'"))
+transaction_dtm >= '2024-10-15'"))
 ```
 
 ```{r}
 trx_dmap <- trx_dmap %>%
   mutate(svc_date = as.Date(transaction_dtm))
 
-trx_dmap_0312 <- trx_dmap %>%
-  filter(svc_date == '2025-03-12')
+trx_dmap_1015 <- trx_dmap %>%
+  filter(svc_date == '2024-10-15')
 
-sum(is.na(trx_dmap_0312$external_stop_point_id))
+sum(is.na(trx_dmap_1015$external_stop_point_id))
 ```
 
