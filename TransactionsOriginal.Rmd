@@ -24,8 +24,8 @@ options(scipen = 999) #(this gets rid of scientific notation throughout the sess
 
 
 
-start_date <- ymd(20250201)
-end_date <- ymd(20250228)
+start_date <- ymd(20250313)
+end_date <- ymd(20250315)
 
 
 
@@ -363,5 +363,5 @@ dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "
 
 user_path <- path_home()
 
-write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_feb_old.csv"), row.names = F)
+write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_march_old.csv"), row.names = F)
 ```
