@@ -24,8 +24,8 @@ options(scipen = 999) #(this gets rid of scientific notation throughout the sess
 
 user_path <- path_home()
 
-start_date <- ymd(20241015)
-end_date <- ymd(20241015)
+start_date <- ymd(20250323)
+end_date <- ymd(20250323)
 ```
 
 # Research Server & DMAP DB connection
