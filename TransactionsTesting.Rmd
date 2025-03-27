@@ -24,8 +24,8 @@ options(scipen = 999) #(this gets rid of scientific notation throughout the sess
 
 user_path <- path_home()
 
-start_date <- ymd(20250323)
-end_date <- ymd(20250323)
+start_date <- ymd(20250315)
+end_date <- ymd(20250315)
 ```
 
 # Research Server & DMAP DB connection
@@ -256,7 +256,11 @@ trx_stage_location <- trx_stage %>%
                                       !is.na(origin) ~ origin,
                                       !is.na(latlon_stop_name) ~ latlon_stop_name,
                                       T ~ "Unknown"),
-            operator_name) 
+            stop_id_compiled = case_when(!is.na(odx_stop_id) ~ odx_stop_id, # this line consolidates the various stop_id fields, in order of specificity
+                                         !is.na(gtfs_stop_id) ~ gtfs_stop_id,
+                                         !is.na(origin) ~ origin,
+                                         T ~ "Unknown"),
+            operator_name)
 
 
 
@@ -358,6 +362,11 @@ dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "
 }
 
 #write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_10_15.csv"), row.names = F)
+```
+
+```{r}
+temp_table <- trx_stage_location %>%
+  filter(stop_id_compiled == 'Unknown')
 ```
 
 ```{r}
