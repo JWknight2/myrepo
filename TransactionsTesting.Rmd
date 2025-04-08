@@ -25,8 +25,8 @@ options(scipen = 999) #(this gets rid of scientific notation throughout the sess
 
 user_path <- path_home()
 
-start_date <- ymd(20250313)
-end_date <- ymd(20250313)
+start_date <- ymd(20250331)
+end_date <- ymd(20250331)
 
 
 
