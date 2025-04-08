@@ -7,25 +7,31 @@ date: "2025-02-28"
 
 # load libraries, set date parameters
 ```{r setup, include=FALSE}
-library(fs)
-library(dplyr)
 library(tidyverse)
 library(lubridate)
 library(DBI) #for the SQL queries
 library(RPostgres) #for the Postgres Server connection
 library(sf)
 library(ggspatial)
-library(prettymapr)
 library(units)
 library(opmitools)
 library(here)
+library(scales)
+library(dplyr)
+library(stringr)
+library(fs)
 
 options(scipen = 999) #(this gets rid of scientific notation throughout the session)
 
 user_path <- path_home()
 
-start_date <- ymd(20250315)
-end_date <- ymd(20250315)
+start_date <- ymd(20250313)
+end_date <- ymd(20250313)
+
+
+
+
+
 ```
 
 # Research Server & DMAP DB connection
@@ -62,6 +68,33 @@ con_rs <-
   )
 
 ```
+
+use this chunk if you do have .Renviron set up
+```{r}
+
+user_sp <- Sys.getenv("user_sp")
+
+con_dmap <- dbConnect(
+  RPostgres::Postgres(),
+  dbname = Sys.getenv("DMAP_DB_NAME"),
+  host = Sys.getenv("DMAP_DB_HOST"),
+  port = Sys.getenv("DMAP_DB_PORT"),
+  user = Sys.getenv("DMAP_DB_USER"),
+  password = Sys.getenv("DMAP_DB_PASSWORD")
+)
+
+con_rs <- dbConnect(
+  RPostgres::Postgres(),
+  dbname = Sys.getenv("RS_DB_NAME"),
+  host = Sys.getenv("RS_DB_HOST"),
+  port = Sys.getenv("RS_DB_PORT"),
+  user = Sys.getenv("RS_DB_USER"),
+  password = Sys.getenv("RS_DB_PASSWORD")
+)
+
+
+```
+
 
 # constants
 ```{r}
@@ -223,6 +256,13 @@ action_key <= 2"
   mutate(devicetype = deviceclassid) %>%
   filter(!canceled)
 
+#log missing stop ids for trx_stage
+trx_stage_missing <- trx_stage %>%
+  group_by(svc_date) %>%
+  summarise(no_of_obs = n(), missing_ids_total = sum(is.na(trx_stage$odx_stop_id)), .groups = 'drop') %>%
+  mutate(table_name = "trx_stage", missing_ids_pct = percent((missing_ids_total/no_of_obs), accuracy = 0.1)) %>%
+  select(svc_date, table_name, no_of_obs, missing_ids_total, missing_ids_pct)
+
 trx_latlon <- trx_stage %>%
   filter(devicetype == "BMV",
          !is.na(lat),
@@ -262,7 +302,12 @@ trx_stage_location <- trx_stage %>%
                                          T ~ "Unknown"),
             operator_name)
 
-
+#log missing stop ids for trx_stage_location
+trx_stage_location_missing <- trx_stage_location %>%
+  group_by(svc_date) %>%
+  summarise(no_of_obs = n(), missing_ids_total = sum(str_count(trx_stage_location$stop_id_compiled, 'Unknown')), .groups = 'drop') %>%
+  mutate(table_name = "trx_stage_location", missing_ids_pct = percent((missing_ids_total/no_of_obs), accuracy = 0.1)) %>%
+  select(svc_date, table_name, no_of_obs, missing_ids_total, missing_ids_pct)
 
 max_afc2_odx <- trx_stage_location %>%
   group_by(system) %>%
@@ -310,7 +355,16 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
             by = c("device_id" = "deviceid")) %>%
                 head(0)
-              }
+}
+
+#log missing stop ids for trx_cubic_recent
+trx_cubic_recent_missing <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, (transaction_dtm - interval '3 hours')::date AS svc_date, external_stop_point_id AS stop_id FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'", "GROUP BY 1,2,3 ORDER BY 1"))
+
+trx_cubic_recent_missing <- trx_cubic_recent_missing %>%
+  group_by(svc_date) %>%
+  summarise(no_of_obs = n(), missing_ids_total = sum(is.na(trx_cubic_recent_missing$stop_id)), .groups = 'drop') %>%
+  mutate(table_name = "trx_cubic_recent", missing_ids_pct = percent((missing_ids_total/no_of_obs), accuracy = 0.1)) %>%
+  select(svc_date, table_name, no_of_obs, missing_ids_total, missing_ids_pct)
 
 trx_cubic_latlon <- trx_cubic_recent %>%
   filter(grepl("BMV", device_id) > 0,
@@ -338,8 +392,17 @@ trx_cubic_recent_location <- trx_cubic_recent %>%
          devicetype = substr(device_id, start = 1, stop = 3)) %>%
   filter(ride_count > 0)
 
+#log missing stop ids for trx_cubic_recent_location
+trx_cubic_recent_location_missing <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, (transaction_dtm - interval '3 hours')::date AS svc_date, external_stop_point_id AS stop_id FROM public.use_transaction_location WHERE (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'", "GROUP BY 1,2,3 ORDER BY 1"))
+
+trx_cubic_recent_location_missing <- trx_cubic_recent_location_missing %>%
+  group_by(svc_date) %>%
+  summarise(no_of_obs = n(), missing_ids_total = sum(is.na(trx_cubic_recent_location_missing$stop_id)), .groups = 'drop') %>%
+  mutate(table_name = "trx_cubic_recent_location", missing_ids_pct = percent((missing_ids_total/no_of_obs), accuracy = 0.1)) %>%
+  select(svc_date, table_name, no_of_obs, missing_ids_total, missing_ids_pct)
+
 trx_all_append <- trx_stage_location %>%
-  rename(stop_id = odx_stop_id) %>%
+  rename(stop_id = stop_id_compiled) %>%
   select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
          system, operator_name, stop_compiled, stop_id) %>%
   rbind(trx_cubic_recent_location %>% 
@@ -353,67 +416,30 @@ trx_all_append <- trx_stage_location %>%
   left_join(cal, by = "svc_date") %>%
   select(svc_date, day, everything())
 
+#log missing stop ids for trx_all_append
+trx_all_append_missing <- trx_all_append %>%
+  group_by(svc_date) %>%
+  summarise(no_of_obs = n(), missing_ids_total = sum(str_count(trx_all_append$stop_id, 'Unknown')), .groups = 'drop') %>%
+  mutate(table_name = "trx_all_append", missing_ids_pct = percent((missing_ids_total/no_of_obs), accuracy = 0.1)) %>%
+  select(svc_date, table_name, no_of_obs, missing_ids_total, missing_ids_pct)
+
+#compile all tables for complete stop id missingness
+stop_ids_missing_total <- bind_rows(trx_stage_missing, trx_stage_location_missing, trx_cubic_recent_missing, trx_cubic_recent_location_missing, trx_all_append_missing)
+
 distinct_dates <- trx_all_append %>%
   group_by(svc_date) %>%
   summarise(svc_date = min(svc_date) %>% as.character()) 
 
 dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "'")
 
+
+# add data to afc_transactions on the research server
+#dbExecute(con_rs, paste0(
+#  "DELETE FROM ridership.afc_transactions WHERE svc_date IN (",dates_to_drop,");"
+#))
+
+#dbAppendTable(con_rs, Id(schema = "ridership", table = "afc_transactions"), trx_all_append)
+
 }
 
-#write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_10_15.csv"), row.names = F)
 ```
-
-```{r}
-temp_table <- trx_stage_location %>%
-  filter(stop_id_compiled == 'Unknown')
-```
-
-```{r}
-transactions_feb_new <- read.csv(paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_feb_new.csv"))
-
-transactions_feb_old <- read.csv(paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_feb_old.csv"))
-```
-
-```{r}
-table(trx_all_append$stop_id)
-```
-
-```{r}
-sum(is.na(trx_all_append$stop_id))
-```
-
-```{r}
-trx_afc1 <- trx_all_append %>%
-  filter(system == "AFC1")
-
-trx_afc2 <- trx_all_append %>%
-  filter(system == "AFC2")
-```
-
-```{r}
-sum(is.na(trx_afc1$stop_id))
-
-sum(is.na(trx_afc2$stop_id))
-```
-
-```{r}
-sum(is.na(trx_stage$odx_stop_id))
-```
-
-```{r}
-trx_dmap <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, 
-external_stop_point_id FROM public.use_transaction_location WHERE 
-transaction_dtm >= '2024-10-15'"))
-```
-
-```{r}
-trx_dmap <- trx_dmap %>%
-  mutate(svc_date = as.Date(transaction_dtm))
-
-trx_dmap_1015 <- trx_dmap %>%
-  filter(svc_date == '2024-10-15')
-
-sum(is.na(trx_dmap_1015$external_stop_point_id))
-```
-
