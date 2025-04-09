@@ -443,3 +443,19 @@ dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "
 }
 
 ```
+
+```{r}
+sum(is.na(trx_stage_location$odx_stop_id))
+sum(is.na(trx_stage_location$gtfs_stop_id))
+sum(is.na(trx_stage_location$origin))
+```
+
+```{r}
+location_testing_temp <- trx_stage_location %>%
+  filter(is.na(gtfs_stop_id))
+```
+
+```{r}
+sum(is.na(location_testing_temp$origin))
+```
+
