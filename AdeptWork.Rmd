@@ -3,3 +3,36 @@ title: "AdeptWork"
 output: html_document
 ---
 
+```{r setup, include=FALSE}
+library(fs)
+library(tidyverse)
+library(lubridate)
+library(DBI)
+library(RPostgres)
+library(sf)
+library(ggspatial)
+library(prettymapr)
+library(units)
+library(opmitools)
+library(dplyr)
+
+options(scipen = 999)
+user_path <- path_home()
+```
+
+```{r}
+adept_trip_archive <- read_csv(paste0(user_path, "/OneDrive - MBTA/Desktop/ADEPT_TRIP_ARCHIVE.csv"))
+```
+
+```{r}
+adept_testing <- adept_trip_archive %>%
+  filter(Status == "S") %>%
+  mutate(trip_date = mdy_hms(Tripdate)) %>%
+  filter(trip_date >= "2025-03-01") %>%
+  filter(trip_date <= "2025-03-31")
+```
+
+```{r}
+table(adept_testing$trip_date)
+```
+
