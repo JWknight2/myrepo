@@ -20,6 +20,8 @@ options(scipen = 999)
 user_path <- path_home()
 ```
 
+#Using test query to upload data into R
+
 ```{r}
 adept_trip_archive <- read_csv(paste0(user_path, "/OneDrive - MBTA/Desktop/ADEPT_TRIP_ARCHIVE.csv"))
 ```
@@ -34,5 +36,18 @@ adept_testing <- adept_trip_archive %>%
 
 ```{r}
 table(adept_testing$trip_date)
+```
+
+#Looking at early March days in detail for differences
+
+```{r}
+ride_early_march <- read_csv(paste0(user_path, "/OneDrive - MBTA/Documents - OPMI/01 Admin/00 Data Strategy/Ongoing Activities/Open Data Portal/Data/Raw Datasets/Ridership Data/The RIDE/RIDE_Trips_Test_5.csv"))
+```
+
+```{r}
+march_testing <- ride_early_march %>%
+  rename(trip_date = 'Trip Date') %>%
+  group_by(trip_date) %>%
+  summarise()
 ```
 
