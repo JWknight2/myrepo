@@ -30,12 +30,13 @@ adept_trip_archive <- read_csv(paste0(user_path, "/OneDrive - MBTA/Desktop/ADEPT
 adept_testing <- adept_trip_archive %>%
   filter(Status == "S") %>%
   mutate(trip_date = mdy_hms(Tripdate)) %>%
-  filter(trip_date >= "2025-03-01") %>%
-  filter(trip_date <= "2025-03-31")
+  filter(trip_date >= "2025-04-01") %>%
+  filter(trip_date <= "2025-04-30") %>%
+  filter(Clientid > 0)
 ```
 
 ```{r}
-table(adept_testing$trip_date)
+table(adept_testing$Clients)
 ```
 
 #Looking at early March days in detail for differences
