@@ -47,7 +47,14 @@ ride_early_march <- read_csv(paste0(user_path, "/OneDrive - MBTA/Documents - OPM
 ```{r}
 march_testing <- ride_early_march %>%
   rename(trip_date = 'Trip Date') %>%
-  group_by(trip_date) %>%
-  summarise()
+  rename(wc_seats = 'Wc Seats')
+```
+
+```{r}
+table(march_testing$wc_seats)
+```
+
+```{r}
+table(march_testing$Status)
 ```
 
