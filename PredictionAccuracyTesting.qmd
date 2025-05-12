@@ -80,7 +80,7 @@ conflicts_prefer(dplyr::filter)
 #start_date and end_date are the filters used to run this week by week
 #Range of days from start_date to end_date should be 7 days in total
 #Currently runs on 1-week lag as bus data for Friday may not be updated until following week
-end_date <- as.Date(format(floor_date(Sys.Date(), "week", 7))) - 7
+end_date <- as.Date(format(floor_date(Sys.Date(), "week", 7))) - 84
 start_date <- end_date - 6
 
 days <- seq(start_date, end_date, by = "days")
@@ -105,7 +105,7 @@ path_pub <- paste0(user_path, "/OneDrive - MBTA/Documents - OPMI/01 Admin/00 Dat
 filename_pub <- paste0(path_pub, "rapid_transit_and_bus_prediction_accuracy_data.csv")
 
 #Created for testing as to not overwrite production data
-filename_pub_test <- paste0(path_pub, "rapid_transit_and_bus_prediction_accuracy_data_test.csv")
+filename_pub_test <- paste0(path_pub, "rapid_transit_and_bus_prediction_accuracy_data_jan_feb_testing.csv")
 ```
 
 ##Scrape prediction analyzer data (for subway)
