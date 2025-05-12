@@ -1,0 +1,452 @@
+---
+title: "Prediction_Accuracy"
+format: html
+---
+
+#Setup
+
+##Create log
+
+```{r}
+#Initialize of append to log function
+initialize_log <- function(log_file) {
+  if(!file.exists(log_file)) {
+    writeLines("<html><body>\n", log_file)
+  }
+}
+
+log_time <- function(log_file){
+  timestamp <- Sys.time()
+  html_content <- paste0(
+    "<h3>Log Entry - ", format(timestamp, "%Y-%m-%d %H:%M:%S"), "</h3>\n"
+  )
+  con <- file(log_file, open = "a")
+  cat(html_content, file = con)
+  close(con)
+}
+
+log_action <- function(log_file, message){
+  html_content <- paste0(
+    "<p>", message, "</p>"
+  )
+  con <- file(log_file, open = "a")
+  cat(html_content, file = con)
+  close(con)
+}
+
+log_plot <- function(log_file, plot, plot_name) {
+  # Create an in-memory graphics device to capture the plot
+  img_file <- tempfile(fileext = ".png")
+  ragg::agg_png(filename = img_file, width = 1400, height = 600, res = 96)
+  print(plot)
+  dev.off()
+  
+  # Read the image file into a raw vector and encode as base64
+  img_raw <- readBin(img_file, "raw", file.info(img_file)$size)
+  img_base64 <- base64enc::base64encode(img_raw)
+  
+  # Remove the temporary file after reading it
+  unlink(img_file)
+  
+  # Prepare the HTML content to log
+  timestamp <- Sys.time()
+  html_content <- paste0(
+    "<h3>Plot - ", format(timestamp, "%Y-%m-%d %H:%M:%S"), "</h3>\n",
+    "<img src='data:image/png;base64,", img_base64,  "' />\n",
+    "<hr>\n"
+  )
+  con <- file(log_file, open = "a")
+  cat(html_content, file = con)
+  close(con)
+}
+```
+
+##Admin
+
+```{r}
+#Admin
+library(conflicted)
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+library(gsheet)
+library(fs)
+library(rvest)
+library(magrittr)
+
+user_path <- path_home()
+conflicts_prefer(dplyr::filter)
+
+#start_date and end_date are the filters used to run this week by week
+#Range of days from start_date to end_date should be 7 days in total
+#Currently runs on 1-week lag as bus data for Friday may not be updated until following week
+end_date <- as.Date(format(floor_date(Sys.Date(), "week", 7))) - 7
+start_date <- end_date - 6
+
+days <- seq(start_date, end_date, by = "days")
+days <- data.frame(days, weekdays(days))
+names(days) <- c("date", "weekday")
+
+#Defining log file path and name
+log_dir <- file.path(user_path, "/OneDrive - MBTA/Documents - OPMI/01 Admin/00 Data Strategy/Ongoing Activities/Open Data Portal/Data QA/Logs/Prediction_Accuracy")
+log_file <- file.path(log_dir, paste0("Prediction_Accuracy_Log_", as.Date(Sys.Date()),".html"))
+
+if (!dir.exists(log_dir)) {
+  dir.create(log_dir, recursive = TRUE)
+}
+
+#Initialize log file
+initialize_log(log_file)
+log_time(log_file)
+log_action(log_file, "Script Started.")
+log_action(log_file, paste0("Log path set to: ", log_file, "\n"))
+
+path_pub <- paste0(user_path, "/OneDrive - MBTA/Documents - OPMI/01 Admin/00 Data Strategy/Ongoing Activities/Open Data Portal/Data/Published Datasets/Performance Data/")
+filename_pub <- paste0(path_pub, "rapid_transit_and_bus_prediction_accuracy_data.csv")
+
+#Created for testing as to not overwrite production data
+filename_pub_test <- paste0(path_pub, "rapid_transit_and_bus_prediction_accuracy_data_test.csv")
+```
+
+##Scrape prediction analyzer data (for subway)
+
+```{r}
+get_route_ids <-
+  c("Orange", "Green-B", "Green-C", "Green-D", "Green-E", "Blue", "Mattapan", "Red")
+get_bins <- 
+  c("0-3", "3-6", "6-12", "12-30")
+
+## scrape
+scrape_data <- function(min_date, max_date, get_route_ids, get_bins) {
+  pred_analyzer_data <- NULL
+  
+  for (route_id in get_route_ids) {
+    for (bin in get_bins) {
+      url_to_get <-
+        paste0(
+          "https://prediction-analyzer.mbtace.com/accuracy?filters%5Bmode%5D=subway&filters%5Bchart_range%5D=Daily&filters%5Broute_ids%5D=",
+          route_id,
+          "&filters%5Bdirection_id%5D=any&filters%5Bbin%5D=",
+          bin,
+          "+min&filters%5Bdate_start%5D=",
+          min_date,
+          "&filters%5Bdate_end%5D=",
+          max_date,
+          "&filters%5Bin_next_two%5D="
+        )
+      
+      active_page <- read_html(url_to_get)
+      active_table <-
+        active_page %>%
+        html_elements(css = "table") %>%
+        magrittr::extract2(2) %>%
+        html_table()
+      
+      active_table <-
+        active_table %>% 
+        mutate(route_id = route_id, bin = paste(bin, "min"), .before = Date)
+      
+      pred_analyzer_data <- bind_rows(pred_analyzer_data, active_table)
+      
+      log_action(log_file, paste("completed pull for route_id", route_id, "and bin", bin, "min at", Sys.time()))
+      Sys.sleep(0.1)
+    }
+  }
+  return(pred_analyzer_data)
+}
+
+pred_analyzer_data <-
+  scrape_data(
+    min_date = start_date,
+    max_date = end_date,
+    get_route_ids = get_route_ids,
+    get_bins = get_bins
+  )
+
+
+## process
+
+pred_analyzer_data <-
+  pred_analyzer_data %>%
+  rename_with( ~ str_to_lower(str_replace_all(., " ", "_"))) %>%
+  mutate(date = ymd(date),
+         accuracy = as.double(str_remove_all(accuracy, "%")))
+
+
+pred_analyzer_summary <-
+  pred_analyzer_data %>%
+  group_by(isoweek = isoweek(date), route_id, bin) %>%
+  summarize(
+    service_date = min(date),
+    num_predictions = sum(count),
+    num_accurate_predictions = round(sum(accuracy * count * .01))
+  ) %>%
+  ungroup() %>%
+  select(-isoweek) %>%
+  arrange(service_date, route_id, as.numeric(str_extract(bin, "^[0-9]+"))) %>%
+  mutate(mode = "subway",
+         arrival_departure = "blended") %>%
+  relocate(all_of(c("service_date", "mode", "route_id", "arrival_departure", "bin", "num_predictions", "num_accurate_predictions")))
+
+subway <- pred_analyzer_summary %>%
+  rename(weekly = service_date) %>%
+  left_join(days, join_by("weekly" == "date")) %>%
+  filter(weekday == "Monday") %>%
+  filter(weekly == max(weekly)) %>%
+  select(weekly, mode, route_id, bin, arrival_departure, num_predictions, num_accurate_predictions)
+```
+
+## New bus pull from google spreadsheet
+
+```{r}
+#Pull the data from the Google spreadsheet
+new_bus_pull <- gsheet2tbl("https://docs.google.com/spreadsheets/d/1T962wwKF3XpW5tIdYsYCG9PFXSji5u_z5KYdx7fUlj4/edit?usp=sharing")
+
+#Get rid of unneeded columns and rows
+new_bus_original_dataframe <- new_bus_pull[-c(2,5:6,9:10,13:14,17:27)] %>%
+  rename(svc_date = `Week Ending`) %>%
+  filter(substr(svc_date, 1, 1) == "2") %>%
+  mutate(bin1 = "0-3 min", bin2 = "3-6 min", bin3 = "6-12 min", bin4 = "12-30 min")
+
+#These three temporary datasets are created for formatting purposes
+new_bus_temp1 <- new_bus_original_dataframe %>%
+  select(1,2,4,6,8)
+
+new_bus_temp2 <- new_bus_original_dataframe %>%
+  select(1,3,5,7,9)
+
+new_bus_bins <- new_bus_original_dataframe %>%
+  select(1,10,11,12,13)
+
+#Transformations for these three temporary datasets
+new_bus_temp1 <- new_bus_temp1 %>%
+  cbind(new_bus_temp1[1], stack(new_bus_temp1[2:5])) %>%
+  select(1,7) %>%
+  rename(num_accurate_predictions = values) %>%
+  mutate(service_date = as.Date(svc_date)) %>%
+  select(service_date, num_accurate_predictions)
+
+new_bus_temp2 <- new_bus_temp2 %>%
+  cbind(new_bus_temp2[1], stack(new_bus_temp2[2:5])) %>%
+  select(1,7) %>%
+  rename(num_predictions = values) %>%
+  mutate(service_date = as.Date(svc_date)) %>%
+  select(service_date, num_predictions)
+
+new_bus_bins <- new_bus_bins %>%
+  cbind(new_bus_bins[1], stack(new_bus_bins[2:5])) %>%
+  select(1,7) %>%
+  rename(bin = values) %>%
+  mutate(service_date = as.Date(svc_date)) %>%
+  select(service_date, bin)
+
+#Our datasets are merged back together and the other fields are added
+new_bus_final <- new_bus_temp1 %>%
+  mutate(num_accurate_predictions = as.numeric(gsub(",", "", num_accurate_predictions)), num_predictions = as.numeric(gsub(",", "", new_bus_temp2$num_predictions)), bin = new_bus_bins$bin, mode = "bus", route_id = "", arrival_departure = "departure") %>%
+  arrange(service_date) %>%
+  filter(between(service_date, start_date, end_date)) %>%
+  select(service_date, mode, route_id, arrival_departure, bin, num_accurate_predictions, num_predictions)
+
+bus <- new_bus_final %>%
+  rename(weekly = service_date) %>%
+  filter(weekly == max(weekly)) %>%
+  select(weekly, mode, route_id, bin, arrival_departure, num_predictions, num_accurate_predictions)
+
+#This line can be commented out to examine all these data frames, but otherwise helps declutter the R environment
+rm(new_bus_pull, new_bus_original_dataframe, new_bus_temp1, new_bus_temp2, new_bus_bins)
+```
+
+##Import earlier data
+
+```{r}
+#Extra read_csv line used for testing
+#subway_bus_prev <- read_csv(filename_pub) %>%
+#  mutate(weekly = as.Date(weekly, format = "%m/%d/%Y"))
+
+subway_bus_prev <- read_csv(filename_pub_test) %>%
+  mutate(weekly = as.Date(weekly, format = "%m/%d/%Y"))
+
+#Checks for duplicate data
+subway_prev <- subway_bus_prev %>%
+  filter(weekly != subway$weekly, mode == "subway")
+
+bus_prev <- subway_bus_prev %>% 
+  filter(weekly != bus$weekly, mode == "bus")
+
+col_order <- names(subway_bus_prev)
+```
+
+#QA
+
+##Check for missing data days
+
+```{r}
+#bus: check for Friday
+fridays <- days %>% filter(weekday == "Friday") %>% pull(date)
+missing_fridays <- fridays[!fridays %in% unique(bus$weekly)]
+missing_message <-
+  paste("Friday is missing in the bus dataset: ",
+        paste(missing_fridays, collapse = ", "))
+if(length(missing_fridays) == 0) {
+  log_action(log_file, paste0("Friday is not missing in the bus dataset."))
+} else {
+  log_action(log_file, paste0(missing_message))
+}
+
+#subway: check for Monday
+mondays <- days %>% filter(weekday == "Monday") %>% pull(date)
+missing_mondays <- as.Date(setdiff(mondays, unique(subway$weekly)))
+missing_message <-
+  paste("Monday is missing in the subway dataset: ",
+        paste(missing_mondays, collapse = ", "))
+if(length(missing_mondays) == 0) {
+  log_action(log_file, paste0("Monday is not missing in the subway dataset."))
+} else {
+  log_action(log_file, paste0(missing_message))
+}
+```
+
+##Check for each bin
+
+```{r}
+#Function to check for each bin
+bins <- c("0-3 min" , "3-6 min" , "6-12 min", "12-30 min")
+check_dates_bins <- function(df, dates) {
+  missing <- FALSE
+  #Check for any missing bins in the data
+  for (i in seq_along(dates)) {
+    df_by_day <- df %>% filter(weekly == dates[i])
+    bins_by_day <- unique(df_by_day$bin)
+    missing_bins_by_day <- setdiff(bins, bins_by_day)
+    if (length(missing_bins_by_day) != 0) {
+      missing <- TRUE
+      log_action(log_file, paste0(dates[i], ": ", paste0(missing_bins_by_day, collapse = ", "), "\n"))
+    }
+  }
+  #If nothing is missing, print None
+  if (!missing) {
+    log_action(log_file, paste0("None"))
+  }
+}
+
+#run function: missing dates and bins will print out
+log_action(log_file, paste0("Missing dates and bins in the bus dataset:\n"))
+bus %>%
+  check_dates_bins(fridays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Blue line:\n"))
+subway %>%
+  filter(route_id == "Blue") %>%
+  check_dates_bins(mondays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Green-B line:\n"))
+subway %>%
+  filter(route_id == "Green-B") %>%
+  check_dates_bins(mondays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Green-C line:\n"))
+subway %>%
+  filter(route_id == "Green-C") %>%
+  check_dates_bins(mondays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Green-D line:\n"))
+subway %>%
+  filter(route_id == "Green-D") %>%
+  check_dates_bins(mondays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Green-E line:\n"))
+subway %>%
+  filter(route_id == "Green-E") %>%
+  check_dates_bins(mondays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Mattapan trolley:\n"))
+subway %>%
+  filter(route_id == "Mattapan") %>%
+  check_dates_bins(mondays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Orange line:\n"))
+subway %>%
+  filter(route_id == "Orange") %>%
+  check_dates_bins(mondays)
+
+log_action(log_file, paste0("\n\nMissing dates and bins in the subway dataset for the Red line:\n"))
+subway %>%
+  filter(route_id == "Red") %>%
+  check_dates_bins(mondays)
+```
+
+##Check distribution of prediction accuracy percentages
+
+```{r}
+#Boxplot prep
+
+subway_date1 <- subway$weekly
+subway_date2 <- subway$weekly - 7
+subway_date3 <- subway$weekly - 14
+subway_date4 <- subway$weekly - 21
+subway_date5 <- subway$weekly - 28
+subway_date6 <- subway$weekly - 35
+subway_date7 <- subway$weekly - 42
+subway_date8 <- subway$weekly - 49
+
+bus_date1 <- bus$weekly
+bus_date2 <- bus$weekly - 7
+bus_date3 <- bus$weekly - 14
+bus_date4 <- bus$weekly - 21
+bus_date5 <- bus$weekly - 28
+bus_date6 <- bus$weekly - 35
+bus_date7 <- bus$weekly - 42
+bus_date8 <- bus$weekly - 49
+```
+
+```{r}
+#Boxplots currently compare last month's worth of data to month before
+
+subway_qa <- subway_prev %>%
+  filter(weekly %in% c(subway_date2, subway_date3, subway_date4, subway_date5, subway_date6, subway_date7, subway_date8))
+
+bus_qa <- bus_prev %>%
+  filter(weekly %in% c(bus_date2, bus_date3, bus_date4, bus_date5, bus_date6, bus_date7, bus_date8))
+
+distribution_plot <- bind_rows(subway, subway_qa, bus, bus_qa) %>%
+  mutate(plot_mo = case_when(weekly %in% c(subway_date1, subway_date2, subway_date3, subway_date4, bus_date1, bus_date2, bus_date3, bus_date4) ~ "curr", TRUE ~ "prev")) %>%
+  group_by(plot_mo, weekly, mode = str_to_title(mode), route_id) %>%
+  summarize(pred_acc = sum(num_accurate_predictions) / sum(num_predictions))
+
+subway_plot <- distribution_plot %>%
+  filter(mode == "Subway")
+
+bus_plot <- distribution_plot %>%
+  filter(mode == "Bus")
+
+log_plot(log_file, boxplot(pred_acc ~ interaction(plot_mo, mode), data = subway_plot, main = "Distribution of Prediction Accuracy Percentages for Subway", horizontal = TRUE, xlab = "Prediction Accuracy", ylab = "", col = "cornflowerblue"), "Distribution of Prediction Accuracy Percentages for Subway")
+
+log_plot(log_file, boxplot(pred_acc ~ interaction(plot_mo, mode), data = bus_plot, main = "Distribution of Prediction Accuracy Percentages for Bus", horizontal = TRUE, xlab = "Prediction Accuracy", ylab = "", col = "cornflowerblue"), "Distribution of Prediction Accuracy Percentages for Bus")
+```
+
+#Upload
+
+##Output for testing
+
+```{r}
+#| eval: false
+
+subway_prev <- subway_prev %>% relocate(all_of(col_order))
+bus_prev <- bus_prev %>% relocate(all_of(col_order))
+subway_bus_prev <- bind_rows(subway_prev, bus_prev) %>%
+  arrange(mode, weekly)
+
+subway <- subway %>% relocate(all_of(col_order))
+bus <- bus %>% relocate(all_of(col_order))
+subway_bus <- bind_rows(subway, bus) %>%
+  arrange(mode, weekly)
+
+#This line will be used for production and the second csv line is used for testing.
+#bind_rows(subway_bus_prev, subway_bus) %>%
+#  arrange(mode, weekly) %>%
+#  write_csv(filename_pub, na = "")
+
+bind_rows(subway_bus_prev, subway_bus) %>%
+  arrange(mode, weekly) %>%
+  write_csv(filename_pub_test, na = "")
+```
