@@ -80,7 +80,7 @@ conflicts_prefer(dplyr::filter)
 #start_date and end_date are the filters used to run this week by week
 #Range of days from start_date to end_date should be 7 days in total
 #Currently runs on 1-week lag as bus data for Friday may not be updated until following week
-end_date <- as.Date(format(floor_date(Sys.Date(), "week", 7))) - 84
+end_date <- as.Date(format(floor_date(Sys.Date(), "week", 7))) - 70
 start_date <- end_date - 6
 
 days <- seq(start_date, end_date, by = "days")
