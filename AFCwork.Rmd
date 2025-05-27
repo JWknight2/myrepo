@@ -173,3 +173,34 @@ user_path <- path_home()
 write.csv(feb_discrepancies_total, file = paste0(user_path, "/OneDrive - MBTA/Desktop/feb_discrepancies_total.csv"), row.names = F)
 ```
 
+#Analysis 5
+
+```{r}
+#Dave Barker ask about new Charlie Card data and whether or not it's showing up in production
+user_path <- path_home()
+
+charlie_card_population <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, txn_status_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name FROM public.use_transaction_location WHERE transaction_dtm >= '2025-02-01' AND transaction_dtm <= '2025-05-13'"))
+```
+
+```{r}
+charlie_card_filtered <- charlie_card_population %>%
+  mutate(svc_date = as.Date(transaction_dtm)) %>%
+  filter(media_class_desc != "Bank Card") %>%
+  filter(txn_status_name == "Success") %>%
+  select(svc_date, txn_status_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name)
+```
+
+```{r}
+pass_purchase_population <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, txn_status_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name FROM public.sale_transaction WHERE transaction_dtm >= '2025-02-01' AND transaction_dtm <= '2025-05-13'"))
+```
+
+```{r}
+pass_purchase_filtered <- pass_purchase_population %>%
+  mutate(svc_date = as.Date(transaction_dtm)) %>%
+  filter(media_type_name %in% c("American Express", "Discover", "MasterCard", "Visa")) %>%
+  select(svc_date, txn_status_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name)
+```
+
+```{r}
+table(pass_purchase_filtered$media_type_name)
+```
