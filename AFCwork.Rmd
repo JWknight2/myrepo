@@ -191,16 +191,15 @@ charlie_card_filtered <- charlie_card_population %>%
 ```
 
 ```{r}
-pass_purchase_population <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, txn_status_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name FROM public.sale_transaction WHERE transaction_dtm >= '2025-02-01' AND transaction_dtm <= '2025-05-13'"))
+pass_purchase_population <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, txn_status_name, device_type_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name FROM public.sale_transaction"))
 ```
 
 ```{r}
 pass_purchase_filtered <- pass_purchase_population %>%
   mutate(svc_date = as.Date(transaction_dtm)) %>%
-  filter(media_type_name %in% c("American Express", "Discover", "MasterCard", "Visa")) %>%
-  select(svc_date, txn_status_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name)
+  select(svc_date, txn_status_name, device_type_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name)
 ```
 
 ```{r}
-table(pass_purchase_filtered$media_type_name)
+table(pass_purchase_filtered$device_type_name)
 ```
