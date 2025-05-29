@@ -203,3 +203,18 @@ pass_purchase_filtered <- pass_purchase_population %>%
 ```{r}
 table(pass_purchase_filtered$device_type_name)
 ```
+
+```{r}
+pass_purchase_location <- dbGetQuery(con_dmap, paste0("SELECT transaction_dtm, txn_status_name, device_type_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name FROM public.use_transaction_location"))
+```
+
+```{r}
+pass_purchase_location_filtered <- pass_purchase_location %>%
+  mutate(svc_date = as.Date(transaction_dtm)) %>%
+  select(svc_date, txn_status_name, device_type_name, media_class_desc, media_class_id, media_class_name, media_type_desc, media_type_id, media_type_name)
+```
+
+```{r}
+table(pass_purchase_location_filtered$device_type_name)
+```
+
