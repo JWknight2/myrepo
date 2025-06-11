@@ -5,71 +5,47 @@ output: html_document
 date: "2025-02-28"
 ---
 
+```{r}
 # load libraries, set date parameters
-```{r setup, include=FALSE}
-library(fs)
-library(dplyr)
 library(tidyverse)
 library(lubridate)
 library(DBI) #for the SQL queries
 library(RPostgres) #for the Postgres Server connection
 library(sf)
 library(ggspatial)
-library(prettymapr)
+library(conflicted)
+conflicts_prefer(dplyr::filter)
 library(units)
-library(opmitools)
-library(here)
+#library(opmitools)
+#library(here)
 
 options(scipen = 999) #(this gets rid of scientific notation throughout the session)
 
-
-
-start_date <- ymd(20250313)
-end_date <- ymd(20250315)
-
-
-
-
-
-```
+start_date <- Sys.Date() - days(16)
+end_date <- Sys.Date() - days(2)
 
 # Research Server & DMAP DB connection
-use this chunk if you don't have .Renviron set up
-```{r}
-#Usernames for sharepoint and pgAdmin
-user_sp <- "jknight2"
-user_rs <- "jknight"
-user_dmap <- "jknight2"
 
-sp_link <- paste0("C:/Users/",user_sp,"/OneDrive - MBTA/Documents - OPMI/02 Active Projects/2024 AFC 2.0/Public Rollout Analyses/Tableau/")
+con_dmap <- dbConnect(
+  RPostgres::Postgres(),
+  dbname = Sys.getenv('dmap_db'),
+  host = Sys.getenv('dmap_server'),
+  port = Sys.getenv('dmap_port'),
+  user = Sys.getenv('dmap_user'),
+  password = Sys.getenv('dmap_password')
+)
 
-# connection to AWS
-con_dmap <-
-  dbConnect(
-    Postgres(),
-    dbname = "dmap_import",
-    user = user_dmap,
-    password = rstudioapi::askForPassword(),
-    port = 5432,
-    host = "dmap-import-prod.cluster-ro-cw84s0ixvuei.us-east-1.rds.amazonaws.com",
-    sslmode = "require"
-  )
+con_rs <- dbConnect(
+  RPostgres::Postgres(),
+  dbname = Sys.getenv('rs_db'),
+  host = Sys.getenv('rs_server'),
+  port = Sys.getenv('rs_port'),
+  user = Sys.getenv('rs_user'),
+  password = Sys.getenv('rs_password')
+)
 
-con_rs <-
-  dbConnect(
-    Postgres(),
-    dbname = "mbta_dw",
-    user = user_rs,
-    password = rstudioapi::askForPassword(),
-    port = 5432,
-    host = "opmi-research-server.cluster-csb3ld1kts7u.us-east-1.rds.amazonaws.com",
-    sslmode = "require"
-  )
-
-```
 
 # constants
-```{r}
 
 gtfs_stops <- dbGetQuery(con_rs, paste0(
   "SELECT * FROM gtfs_post_recap.stops_2024_2_recap"
@@ -186,10 +162,6 @@ cal <- dbGetQuery(con_rs, paste0(
   "SELECT servicedate svc_date, day FROM ridership.calendar"
 ))
 
-```
-
-
-```{r}
 
 # look at taps by operating date, by device position. see if there are differences between middle readers and devices by the operators
 
@@ -197,12 +169,12 @@ cal <- dbGetQuery(con_rs, paste0(
 load_dates <- seq.Date(start_date, end_date, "day")
 
 for (sdate in 1:length(load_dates)){
-
-
-dbExecute(con_rs, paste0("set timezone TO 'America/New_York';"))
-
-trx_stage <- dbGetQuery(con_rs, paste0(
-  "select ft.*, 
+  
+  
+  dbExecute(con_rs, paste0("set timezone TO 'America/New_York';"))
+  
+  trx_stage <- dbGetQuery(con_rs, paste0(
+    "select ft.*, 
   s.stage_key, s.jny_seq, s.stage_seq, s.origin, s.destination, s.o_time, s.d_time, s.num_riders,
   s.o_txn_key, s.d_txn_key, s.o_code, s.d_code, s.x_code,
   fp.fare_prod_name, fp.fare_prod_desc, fp.category_key, fp.rider_type_key, fp.days_valid, fp.temporal_validity,
@@ -219,62 +191,62 @@ LEFT JOIN odx2.fare_product_category USING(category_key)
 WHERE ft.svc_date = '", as.character(load_dates[sdate]), "'
 AND 
 action_key <= 2"
-)) %>%
-  left_join(device_lookup, 
-            by = c("device_id" = "deviceid")) %>%
-  left_join(gtfs_stops %>% transmute(odx_stop_id = stop_id,
-                                     odx_stop_name = stop_name),
-            by = "odx_stop_id") %>%
-  mutate(devicetype = deviceclassid) %>%
-  filter(!canceled)
-
-trx_latlon <- trx_stage %>%
-  filter(devicetype == "BMV",
-         !is.na(lat),
-         is.na(odx_stop_name)) %>%
-  transmute(txn_key, vehicle_id = vehicle_id %>% as.numeric(), 
-            operator_name, lat, lon) %>%
-  st_as_sf(coords = c("lon","lat"), crs = 4326) %>%
-  st_join(stop_point_buffer, suffix = c("_from_stoppoint","_from_coordinates")) %>%
-  as.data.frame() %>%
-  mutate(match = case_when(operator_name == mode ~ 1,
-                           T ~ 0)) %>%
-  group_by(txn_key) %>%
-  arrange(txn_key,desc(match)) %>%
-  mutate(sequence = row_number()) %>%
-  ungroup() %>%
-  filter(sequence == 1) %>%
-  transmute(txn_key, latlon_stop_name = stop_name)
-
-
-trx_stage_location <- trx_stage %>%
-  left_join(trx_latlon, by = "txn_key") %>%
-  filter(sb_device == 1 | devicetype %in% c("BMV","HBG","ATV","HHU")) %>%
-  transmute(txn_key, svc_date, txn_time, card, device_id, devicetype, vehicle_id, route_id, alt_route_id, 
-            place_id, lat, lon,
-            origin, fare_prod_name, category_name, odx_stop_id, gtfs_stop_id = stop_id, 
-            stop_name_gtfs, locationid, latlon_stop_name, num_riders,
-            system = case_when(devicetype %in% c("BMV","HBG","ATV","HHU") ~ "AFC2",
-                               T ~ "AFC1"),
-            stop_compiled = case_when(!is.na(odx_stop_name) ~ odx_stop_name,
-                                      !is.na(stop_name_gtfs) ~ stop_name_gtfs,
-                                      !is.na(origin) ~ origin,
-                                      !is.na(latlon_stop_name) ~ latlon_stop_name,
-                                      T ~ "Unknown"),
-            operator_name) 
-
-
-
-max_afc2_odx <- trx_stage_location %>%
-  group_by(system) %>%
-  summarise(max_date = max(svc_date, na.rm = T)) %>%
-  filter(system == "AFC2") %>%
-  select(max_date)
-
-
+  )) %>%
+    left_join(device_lookup, 
+              by = c("device_id" = "deviceid")) %>%
+    left_join(gtfs_stops %>% transmute(odx_stop_id = stop_id,
+                                       odx_stop_name = stop_name),
+              by = "odx_stop_id") %>%
+    mutate(devicetype = deviceclassid) %>%
+    filter(!canceled)
+  
+  trx_latlon <- trx_stage %>%
+    filter(devicetype == "BMV",
+           !is.na(lat),
+           is.na(odx_stop_name)) %>%
+    transmute(txn_key, vehicle_id = vehicle_id %>% as.numeric(), 
+              operator_name, lat, lon) %>%
+    st_as_sf(coords = c("lon","lat"), crs = 4326) %>%
+    st_join(stop_point_buffer, suffix = c("_from_stoppoint","_from_coordinates")) %>%
+    as.data.frame() %>%
+    mutate(match = case_when(operator_name == mode ~ 1,
+                             T ~ 0)) %>%
+    group_by(txn_key) %>%
+    arrange(txn_key,desc(match)) %>%
+    mutate(sequence = row_number()) %>%
+    ungroup() %>%
+    filter(sequence == 1) %>%
+    transmute(txn_key, latlon_stop_name = stop_name)
+  
+  
+  trx_stage_location <- trx_stage %>%
+    left_join(trx_latlon, by = "txn_key") %>%
+    filter(sb_device == 1 | devicetype %in% c("BMV","HBG","ATV","HHU")) %>%
+    transmute(txn_key, svc_date, txn_time, card, device_id, devicetype, vehicle_id, route_id, alt_route_id, 
+              place_id, lat, lon,
+              origin, fare_prod_name, category_name, odx_stop_id, gtfs_stop_id = stop_id, 
+              stop_name_gtfs, locationid, latlon_stop_name, num_riders,
+              system = case_when(devicetype %in% c("BMV","HBG","ATV","HHU") ~ "AFC2",
+                                 T ~ "AFC1"),
+              stop_compiled = case_when(!is.na(odx_stop_name) ~ odx_stop_name,
+                                        !is.na(stop_name_gtfs) ~ stop_name_gtfs,
+                                        !is.na(origin) ~ origin,
+                                        !is.na(latlon_stop_name) ~ latlon_stop_name,
+                                        T ~ "Unknown"),
+              operator_name) 
+  
+  
+  
+  max_afc2_odx <- trx_stage_location %>%
+    group_by(system) %>%
+    summarise(max_date = max(svc_date, na.rm = T)) %>%
+    filter(system == "AFC2") %>%
+    select(max_date)
+  
+  
   if(length(trx_latlon$txn_key) < 1000){
-trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
-  "SELECT
+    trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
+      "SELECT
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
   device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
@@ -284,14 +256,14 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   AND device_id IS NOT NULL
   AND media_class_name != 'Open Transit Token'
   AND (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'",
-  "GROUP BY 1,2,3,4,5,6,7,8,9
+      "GROUP BY 1,2,3,4,5,6,7,8,9
   ORDER BY 1"
-)) %>%
-  left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
-            by = c("device_id" = "deviceid")) 
-} else{
-              trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
-  "SELECT
+    )) %>%
+      left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
+                by = c("device_id" = "deviceid")) 
+  } else{
+    trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
+      "SELECT
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
   device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
@@ -301,67 +273,72 @@ trx_cubic_recent <- dbGetQuery(con_dmap, paste0(
   AND device_id IS NOT NULL
   AND media_class_name != 'Open Transit Token'
   AND (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'",
-  # "2024-08-16"
-  # max_afc2_odx$max_date %>% as.character()
-  # ,"' AND (transaction_dtm - interval '3 hours')::date <= '"
-  # , as.character(end_date),"' 
-  "GROUP BY 1,2,3,4,5,6,7,8,9
+      # "2024-08-16"
+      # max_afc2_odx$max_date %>% as.character()
+      # ,"' AND (transaction_dtm - interval '3 hours')::date <= '"
+      # , as.character(end_date),"' 
+      "GROUP BY 1,2,3,4,5,6,7,8,9
   ORDER BY 1"
-)) %>%
-  left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
-            by = c("device_id" = "deviceid")) %>%
-                head(0)
-              }
-
-trx_cubic_latlon <- trx_cubic_recent %>%
-  filter(grepl("BMV", device_id) > 0,
-         !is.na(lat)) %>%
-  transmute(device_id, transaction_dtm, vehicle_id = bus_id %>% as.numeric(), 
-            operator_name,
-            lat, lon) %>%
-  st_as_sf(coords = c("lon","lat"), crs = 4326) %>%
-  st_join(stop_point_buffer, suffix = c("_from_stoppoint","_from_coordinates")) %>%
-  as.data.frame() %>%
-  mutate(match = case_when(operator_name == mode ~ 1,
-                           T ~ 0)) %>%
-  group_by(transaction_dtm, device_id) %>%
-  arrange(transaction_dtm, device_id, desc(match)) %>%
-  mutate(sequence = row_number()) %>%
-  ungroup() %>%
-  filter(sequence == 1) %>%
-  transmute(transaction_dtm, device_id, latlon_stop_name = stop_name)
-
-trx_cubic_recent_location <- trx_cubic_recent %>%
-  left_join(trx_cubic_latlon, by = c("transaction_dtm","device_id")) %>%
-  mutate(stop_compiled = case_when(!is.na(stop_name_gtfs) ~ stop_name_gtfs,
-                                   !is.na(latlon_stop_name) ~ latlon_stop_name,
-                                   T ~ "Unknown"),
-         devicetype = substr(device_id, start = 1, stop = 3)) %>%
-  filter(ride_count > 0)
-
-trx_all_append <- trx_stage_location %>%
-  select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
-         system, operator_name, stop_compiled) %>%
-  rbind(trx_cubic_recent_location %>% 
-          transmute(svc_date, txn_time = transaction_dtm, device_id, devicetype,
-                    category_name, fare_prod_name, system = "AFC2", operator_name, stop_compiled)) %>%
-  mutate(hour = floor_date(txn_time, "hour") %>% format(format = "%H:%M"),
-         pax = 1,
-         inserted_date = Sys.Date()) %>%
-  rename(stop_name = stop_compiled,
-         num_riders = pax) %>%
-  left_join(cal, by = "svc_date") %>%
-  select(svc_date, day, everything())
-
-distinct_dates <- trx_all_append %>%
-  group_by(svc_date) %>%
-  summarise(svc_date = min(svc_date) %>% as.character()) 
-
-dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "'")
-
+    )) %>%
+      left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
+                by = c("device_id" = "deviceid")) %>%
+      head(0)
+  }
+  
+  trx_cubic_latlon <- trx_cubic_recent %>%
+    filter(grepl("BMV", device_id) > 0,
+           !is.na(lat)) %>%
+    transmute(device_id, transaction_dtm, vehicle_id = bus_id %>% as.numeric(), 
+              operator_name,
+              lat, lon) %>%
+    st_as_sf(coords = c("lon","lat"), crs = 4326) %>%
+    st_join(stop_point_buffer, suffix = c("_from_stoppoint","_from_coordinates")) %>%
+    as.data.frame() %>%
+    mutate(match = case_when(operator_name == mode ~ 1,
+                             T ~ 0)) %>%
+    group_by(transaction_dtm, device_id) %>%
+    arrange(transaction_dtm, device_id, desc(match)) %>%
+    mutate(sequence = row_number()) %>%
+    ungroup() %>%
+    filter(sequence == 1) %>%
+    transmute(transaction_dtm, device_id, latlon_stop_name = stop_name)
+  
+  trx_cubic_recent_location <- trx_cubic_recent %>%
+    left_join(trx_cubic_latlon, by = c("transaction_dtm","device_id")) %>%
+    mutate(stop_compiled = case_when(!is.na(stop_name_gtfs) ~ stop_name_gtfs,
+                                     !is.na(latlon_stop_name) ~ latlon_stop_name,
+                                     T ~ "Unknown"),
+           devicetype = substr(device_id, start = 1, stop = 3)) %>%
+    filter(ride_count > 0)
+  
+  trx_all_append <- trx_stage_location %>%
+    select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
+           system, operator_name, stop_compiled) %>%
+    rbind(trx_cubic_recent_location %>% 
+            transmute(svc_date, txn_time = transaction_dtm, device_id, devicetype,
+                      category_name, fare_prod_name, system = "AFC2", operator_name, stop_compiled)) %>%
+    mutate(hour = floor_date(txn_time, "hour") %>% format(format = "%H:%M"),
+           pax = 1,
+           inserted_date = Sys.Date()) %>%
+    rename(stop_name = stop_compiled,
+           num_riders = pax) %>%
+    left_join(cal, by = "svc_date") %>%
+    select(svc_date, day, everything())
+  
+  distinct_dates <- trx_all_append %>%
+    group_by(svc_date) %>%
+    summarise(svc_date = min(svc_date) %>% as.character()) 
+  
+  dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "'")
+  
+  
+  # add data to afc_transactions on the research server
+  dbExecute(con_rs, paste0(
+    "DELETE FROM ridership.afc_transactions WHERE svc_date IN (",dates_to_drop,");"
+  ))
+  
+  dbAppendTable(con_rs, Id(schema = "ridership", table = "afc_transactions"), trx_all_append)
+  
 }
-
-user_path <- path_home()
-
-#write.csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_march_old.csv"), row.names = F)
 ```
+
