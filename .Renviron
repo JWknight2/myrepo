@@ -1,0 +1,11 @@
+rs_user = "jknight"
+rs_password = "Pb&n2SYu#p8^#Gql$F94PKmqna9"
+rs_server = 'opmi-research-server.cluster-csb3ld1kts7u.us-east-1.rds.amazonaws.com'
+rs_db = 'mbta_dw'
+rs_port = 5432
+
+dmap_user = "jknight2"
+dmap_password = "mezzo9rotate2WASHBOWL"
+dmap_server = 'dmap-import-prod.cluster-ro-cw84s0ixvuei.us-east-1.rds.amazonaws.com'
+dmap_db = 'dmap_import'
+dmap_port = 5432
