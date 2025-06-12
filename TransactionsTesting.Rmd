@@ -21,7 +21,7 @@ library(units)
 
 options(scipen = 999) #(this gets rid of scientific notation throughout the session)
 
-start_date <- Sys.Date() - days(16)
+start_date <- Sys.Date() - days(2)
 end_date <- Sys.Date() - days(2)
 
 # Research Server & DMAP DB connection
@@ -179,12 +179,13 @@ for (sdate in 1:length(load_dates)){
   s.o_txn_key, s.d_txn_key, s.o_code, s.d_code, s.x_code,
   fp.fare_prod_name, fp.fare_prod_desc, fp.category_key, fp.rider_type_key, fp.days_valid, fp.temporal_validity,
   category_name,
-t.route_id alt_route_id, t.dir_id alt_dir_id, v.stop_id odx_stop_id
+t.route_id alt_route_id, t.dir_id alt_dir_id, v.stop_id odx_stop_id, m.fare_med_name 
 FROM odx2.fare_transaction ft
 LEFT JOIN (SELECT * FROM odx2.stage WHERE svc_date = '", as.character(load_dates[sdate]), "') AS s ON s.o_txn_key = ft.txn_key
 LEFT JOIN (SELECT * FROM odx2.ride WHERE svc_date = '", as.character(load_dates[sdate]), "' AND ride_seq = 1) AS r USING(stage_key)
 LEFT JOIN (SELECT * FROM odx2.visit WHERE svc_date = '", as.character(load_dates[sdate]), "') AS v ON v.visit_key = r.start_visit_key
 LEFT JOIN (SELECT * FROM odx2.trip WHERE svc_date = '", as.character(load_dates[sdate]), "') AS t USING(trip_key)
+LEFT JOIN (SELECT * FROM odx2.fare_medium) AS m USING(fare_med_key)
 LEFT JOIN odx2.fare_product fp USING (fare_prod_id) 
 LEFT JOIN odx2.fare_product_category USING(category_key)
 
@@ -222,6 +223,8 @@ action_key <= 2"
   trx_stage_location <- trx_stage %>%
     left_join(trx_latlon, by = "txn_key") %>%
     filter(sb_device == 1 | devicetype %in% c("BMV","HBG","ATV","HHU")) %>%
+    rename(txn_status_name = canceled) %>%
+    rename(media_class_name = fare_med_name) %>%
     transmute(txn_key, svc_date, txn_time, card, device_id, devicetype, vehicle_id, route_id, alt_route_id, 
               place_id, lat, lon,
               origin, fare_prod_name, category_name, odx_stop_id, gtfs_stop_id = stop_id, 
@@ -233,7 +236,7 @@ action_key <= 2"
                                         !is.na(origin) ~ origin,
                                         !is.na(latlon_stop_name) ~ latlon_stop_name,
                                         T ~ "Unknown"),
-              operator_name) 
+              operator_name, txn_status_name, media_class_name) 
   
   
   
@@ -250,13 +253,12 @@ action_key <= 2"
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
   device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
-  sum(ride_count) ride_count
+  sum(ride_count) ride_count, media_class_name, txn_status_name
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
   AND device_id IS NOT NULL
-  AND media_class_name != 'Open Transit Token'
   AND (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'",
-      "GROUP BY 1,2,3,4,5,6,7,8,9
+      "GROUP BY 1,2,3,4,5,6,7,8,9,10,11
   ORDER BY 1"
     )) %>%
       left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
@@ -267,17 +269,16 @@ action_key <= 2"
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
   device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
-  sum(ride_count) ride_count
+  sum(ride_count) ride_count, media_class_name, txn_status_name
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
   AND device_id IS NOT NULL
-  AND media_class_name != 'Open Transit Token'
   AND (transaction_dtm - interval '3 hours')::date = '", as.character(load_dates[sdate]), "'",
       # "2024-08-16"
       # max_afc2_odx$max_date %>% as.character()
       # ,"' AND (transaction_dtm - interval '3 hours')::date <= '"
       # , as.character(end_date),"' 
-      "GROUP BY 1,2,3,4,5,6,7,8,9
+      "GROUP BY 1,2,3,4,5,6,7,8,9,10,11
   ORDER BY 1"
     )) %>%
       left_join(device_lookup %>% select(deviceid, stop_name_gtfs) %>% unique(),
@@ -313,10 +314,10 @@ action_key <= 2"
   
   trx_all_append <- trx_stage_location %>%
     select(svc_date, txn_time, device_id, devicetype, category_name, fare_prod_name,
-           system, operator_name, stop_compiled) %>%
+           system, operator_name, stop_compiled, media_class_name, txn_status_name) %>%
     rbind(trx_cubic_recent_location %>% 
             transmute(svc_date, txn_time = transaction_dtm, device_id, devicetype,
-                      category_name, fare_prod_name, system = "AFC2", operator_name, stop_compiled)) %>%
+                      category_name, fare_prod_name, system = "AFC2", operator_name, stop_compiled, media_class_name, txn_status_name)) %>%
     mutate(hour = floor_date(txn_time, "hour") %>% format(format = "%H:%M"),
            pax = 1,
            inserted_date = Sys.Date()) %>%
@@ -331,13 +332,12 @@ action_key <= 2"
   
   dates_to_drop <- paste0("'", paste(distinct_dates$svc_date, collapse = "','"), "'")
   
-  
   # add data to afc_transactions on the research server
-  dbExecute(con_rs, paste0(
-    "DELETE FROM ridership.afc_transactions WHERE svc_date IN (",dates_to_drop,");"
-  ))
+#  dbExecute(con_rs, paste0(
+#    "DELETE FROM ridership.afc_transactions WHERE svc_date IN (",dates_to_drop,");"
+#  ))
   
-  dbAppendTable(con_rs, Id(schema = "ridership", table = "afc_transactions"), trx_all_append)
+#  dbAppendTable(con_rs, Id(schema = "ridership", table = "afc_transactions"), trx_all_append)
   
 }
 ```
