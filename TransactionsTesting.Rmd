@@ -253,7 +253,7 @@ action_key <= 2"
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
   device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
-  sum(ride_count) ride_count, media_class_name, txn_status_name
+  media_class_name, txn_status_name, sum(ride_count) ride_count
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
   AND device_id IS NOT NULL
@@ -269,7 +269,7 @@ action_key <= 2"
   transaction_dtm,
   (transaction_dtm - interval '3 hours')::date AS svc_date,
   device_id, fare_prod_desc AS category_name, fare_prod_rider_class_desc AS fare_prod_name, bus_id, operator_name, latitude lat, longitude lon,
-  sum(ride_count) ride_count, media_class_name, txn_status_name
+  media_class_name, txn_status_name, sum(ride_count) ride_count
   FROM public.use_transaction_location
   WHERE reference_notes IS NULL
   AND device_id IS NOT NULL
@@ -340,5 +340,10 @@ action_key <= 2"
 #  dbAppendTable(con_rs, Id(schema = "ridership", table = "afc_transactions"), trx_all_append)
   
 }
+```
+
+```{r}
+table(trx_all_append$txn_status_name)
+table(trx_all_append$media_class_name)
 ```
 
