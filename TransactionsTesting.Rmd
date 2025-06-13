@@ -11,7 +11,7 @@ library(tidyverse)
 library(lubridate)
 library(DBI) #for the SQL queries
 library(RPostgres) #for the Postgres Server connection
-library(sf)
+library(fs)
 library(ggspatial)
 library(conflicted)
 conflicts_prefer(dplyr::filter)
@@ -345,5 +345,11 @@ action_key <= 2"
 ```{r}
 table(trx_all_append$txn_status_name)
 table(trx_all_append$media_class_name)
+```
+
+```{r}
+user_path <- path_home()
+
+write_csv(trx_all_append, file = paste0(user_path, "/OneDrive - MBTA/Desktop/transactions_0610.csv"))
 ```
 
